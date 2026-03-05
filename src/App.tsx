@@ -164,34 +164,33 @@ export default function App() {
 
           {view === 'action_selector' && inputMode && (
             <ActionSelector 
-              key="action_selector" 
               inputMode={inputMode} 
               onSelectAction={handleSelectAction} 
             />
           )}
 
           {view === 'action_execute' && action === 'comentar' && inputMode && (
-            <NoteCapture key="comentar" inputMode={inputMode} onSaved={handleSaved} onCancel={handleBack} />
+            <NoteCapture inputMode={inputMode} onSaved={handleSaved} onCancel={handleBack} />
           )}
 
           {view === 'action_execute' && action === 'fotografar' && (
-            <DocumentCapture key="fotografar" onSaved={handleSaved} onCancel={handleBack} />
+            <DocumentCapture onSaved={handleSaved} onCancel={handleBack} />
           )}
 
           {view === 'action_execute' && action === 'salvar_local' && (
-            <LocationCapture key="salvar_local" onSaved={handleSaved} onCancel={handleBack} />
+            <LocationCapture onSaved={handleSaved} onCancel={handleBack} />
           )}
 
           {view === 'action_execute' && action === 'agendar' && inputMode && (
-            <ScheduleCapture key="agendar" inputMode={inputMode} onSaved={handleSaved} onCancel={handleBack} />
+            <ScheduleCapture inputMode={inputMode} onSaved={handleSaved} onCancel={handleBack} />
           )}
 
           {view === 'action_execute' && action === 'consultar' && inputMode && (
-            <ConsultChat key="consultar" inputMode={inputMode} onClose={handleSaved} />
+            <ConsultChat inputMode={inputMode} onClose={handleSaved} />
           )}
 
-          {view === 'saved' && <SavedItems key="saved" />}
-          {view === 'settings' && <Settings key="settings" />}
+          {view === 'saved' && <SavedItems />}
+          {view === 'settings' && <Settings />}
         </AnimatePresence>
       </main>
     </div>
