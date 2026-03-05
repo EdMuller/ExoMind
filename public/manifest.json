@@ -1,0 +1,16 @@
+{
+  "name": "ExoMind",
+  "short_name": "ExoMind",
+  "description": "Seu Segundo Cérebro",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/2103/2103132.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
