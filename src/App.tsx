@@ -159,6 +159,10 @@ export default function App() {
                   <span className="font-medium text-lg">Falar</span>
                 </button>
               </div>
+
+              <div className="mt-auto pt-12 pb-4 opacity-30">
+                <p className="text-[10px] uppercase tracking-[0.3em] font-bold text-slate-500">ExoMind v1.0.5</p>
+              </div>
             </motion.div>
           )}
 

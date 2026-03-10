@@ -34,6 +34,7 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
   const [isConnecting, setIsConnecting] = useState(false);
   const sessionRef = useRef<any>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const playbackContextRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
 
@@ -217,15 +218,30 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
                 bytes[i] = binaryString.charCodeAt(i);
               }
               
-              const audioCtx = new AudioContext({ sampleRate: 24000 });
+              if (!playbackContextRef.current) {
+                playbackContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+              }
+              const audioCtx = playbackContextRef.current;
+              
               try {
-                const audioBuffer = await audioCtx.decodeAudioData(bytes.buffer);
+                // Try decoding as a standard container first
+                const audioBuffer = await audioCtx.decodeAudioData(bytes.buffer.slice(0));
                 const source = audioCtx.createBufferSource();
                 source.buffer = audioBuffer;
                 source.connect(audioCtx.destination);
                 source.start();
               } catch (e) {
-                console.error('Error decoding audio', e);
+                // Fallback: Assume raw 16-bit Linear PCM (24kHz)
+                const pcmData = new Int16Array(bytes.buffer);
+                const audioBuffer = audioCtx.createBuffer(1, pcmData.length, 24000);
+                const channelData = audioBuffer.getChannelData(0);
+                for (let i = 0; i < pcmData.length; i++) {
+                  channelData[i] = pcmData[i] / 32768.0;
+                }
+                const source = audioCtx.createBufferSource();
+                source.buffer = audioBuffer;
+                source.connect(audioCtx.destination);
+                source.start();
               }
             }
 
@@ -280,6 +296,11 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
     }
     if (audioContextRef.current) {
       audioContextRef.current.close();
+      audioContextRef.current = null;
+    }
+    if (playbackContextRef.current) {
+      playbackContextRef.current.close();
+      playbackContextRef.current = null;
     }
     if (sessionRef.current) {
       try {
