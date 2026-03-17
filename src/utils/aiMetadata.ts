@@ -1,10 +1,10 @@
 import { GoogleGenAI, Type } from '@google/genai';
-
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+import { getAI } from './ai';
 
 export async function generateItemMetadata(content: string, type: 'note' | 'photo' | 'location' | 'schedule') {
   try {
     let prompt = '';
+    const ai = getAI();
     if (type === 'note') {
       prompt = `Analise a seguinte nota e extraia:
 1. Um título curto que represente o foco principal (máximo 30 caracteres).

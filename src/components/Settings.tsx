@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Settings as SettingsIcon, Download, Upload, Cloud, Bell, Save, CheckCircle2, AlertCircle, User, Image as ImageIcon, Video, Mic, Volume2, Loader2, LogOut } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { GoogleGenAI } from '@google/genai';
+import { getAI } from '../utils/ai';
 import { getItems, importItems } from '../db';
 import { initAudio, getAudioContext } from '../utils/tts';
 import { useAuth } from '../AuthContext';
@@ -11,7 +11,7 @@ interface SettingsProps {
 }
 
 export function Settings({ onClose }: SettingsProps) {
-  const { user, logOut, cacaVoiceUses } = useAuth();
+  const { user, logOut, cacaVoiceUses, incrementCacaVoiceUses } = useAuth();
   const [appName, setAppName] = useState('ExoMind');
   const [userName, setUserName] = useState('');
   const [appIcon, setAppIcon] = useState<string | null>(null);
@@ -154,7 +154,7 @@ export function Settings({ onClose }: SettingsProps) {
         // Increment usage after successful play
         await incrementCacaVoiceUses();
       } else {
-        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+        const ai = getAI();
         const response = await ai.models.generateContent({
           model: "gemini-2.5-flash-preview-tts",
           contents: [{ parts: [{ text: "Parabéns, Você está conhecendo seu mais recente e mais completo assistente diário para todos os assuntos." }] }],

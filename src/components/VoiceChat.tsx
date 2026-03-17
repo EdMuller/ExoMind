@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Mic, MicOff, Loader2 } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { GoogleGenAI, LiveServerMessage, Modality } from '@google/genai';
+import { LiveServerMessage, Modality } from '@google/genai';
+import { getAI } from '../utils/ai';
 import { AudioVisualizer } from './AudioVisualizer';
 import { initAudio, getAudioContext } from '../utils/tts';
-
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 export function VoiceChat() {
   const [isRecording, setIsRecording] = useState(false);
@@ -23,6 +22,7 @@ export function VoiceChat() {
     initAudio();
 
     try {
+      const ai = getAI();
       const mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaStreamRef.current = mediaStream;
       setStream(mediaStream);

@@ -1,4 +1,5 @@
 import { GoogleGenAI, Modality } from '@google/genai';
+import { getAI } from './ai';
 
 let sharedAudioCtx: AudioContext | null = null;
 let audioUnlocked = false;
@@ -78,7 +79,7 @@ export async function playTTS(text: string, voiceId: string): Promise<void> {
           resolve();
         });
       } else {
-        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+        const ai = getAI();
         console.log('Requesting TTS from Gemini for voice:', voiceId);
         const response = await ai.models.generateContent({
           model: "gemini-2.5-flash-preview-tts",

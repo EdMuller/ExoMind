@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Send, Loader2, Bot, User, Mic, MicOff, X, Image as ImageIcon } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { GoogleGenAI, LiveServerMessage, Type } from '@google/genai';
+import { GoogleGenAI, LiveServerMessage, Type, Modality } from '@google/genai';
+import { getAI } from '../utils/ai';
 import { getItems } from '../db';
 import { playTTS, initAudio, getAudioContext } from '../utils/tts';
 import { useAuth } from '../AuthContext';
-
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 interface ConsultChatProps {
   inputMode: 'text' | 'voice';
@@ -120,6 +119,7 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
     playTTS("Processando sua pergunta...", selectedVoice === 'uHxni9EgaoUr7MGw3Der' ? 'Zephyr' : selectedVoice);
 
     try {
+      const ai = getAI();
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: userMsg,
@@ -165,6 +165,7 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
     const liveVoice = selectedVoice === 'uHxni9EgaoUr7MGw3Der' ? 'Zephyr' : selectedVoice;
 
     try {
+      const ai = getAI();
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaStreamRef.current = stream;
 
@@ -181,7 +182,7 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
       const sessionPromise = ai.live.connect({
         model: 'gemini-2.5-flash-native-audio-preview-09-2025',
         config: {
-          responseModalities: ['AUDIO'],
+          responseModalities: [Modality.AUDIO],
           speechConfig: {
             voiceConfig: { prebuiltVoiceConfig: { voiceName: liveVoice } },
           },

@@ -1,9 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, Loader2 } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { GoogleGenAI } from '@google/genai';
-
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+import { getAI } from '../utils/ai';
 
 interface Message {
   id: string;
@@ -19,12 +17,18 @@ export function TextChat() {
   const chatRef = useRef<any>(null);
 
   useEffect(() => {
-    chatRef.current = ai.chats.create({
-      model: 'gemini-3-flash-preview',
-      config: {
-        systemInstruction: 'Você é o ExoMind, um assistente pessoal útil, conciso e amigável.',
-      },
-    });
+    try {
+      const ai = getAI();
+      chatRef.current = ai.chats.create({
+        model: 'gemini-3-flash-preview',
+        config: {
+          systemInstruction: 'Você é o ExoMind, um assistente pessoal útil, conciso e amigável.',
+        },
+      });
+    } catch (error) {
+      console.error('Failed to initialize AI:', error);
+      setMessages([{ id: 'error', role: 'model', text: error instanceof Error ? error.message : 'Erro ao inicializar a IA.' }]);
+    }
   }, []);
 
   useEffect(() => {

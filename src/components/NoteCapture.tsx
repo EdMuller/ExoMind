@@ -2,11 +2,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Mic, MicOff, Loader2, Save, X, CheckCircle2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { saveItem } from '../db';
-import { GoogleGenAI, LiveServerMessage } from '@google/genai';
+import { GoogleGenAI, LiveServerMessage, Modality } from '@google/genai';
+import { getAI } from '../utils/ai';
 import { generateItemMetadata } from '../utils/aiMetadata';
 import { AudioVisualizer } from './AudioVisualizer';
-
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 interface NoteCaptureProps {
   inputMode: 'text' | 'voice';
@@ -33,6 +32,7 @@ export function NoteCapture({ inputMode, onSaved, onCancel }: NoteCaptureProps) 
     setStatusText('Conectando...');
 
     try {
+      const ai = getAI();
       const mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaStreamRef.current = mediaStream;
       setStream(mediaStream);
@@ -53,7 +53,7 @@ export function NoteCapture({ inputMode, onSaved, onCancel }: NoteCaptureProps) 
       const sessionPromise = ai.live.connect({
         model: 'gemini-2.5-flash-native-audio-preview-09-2025',
         config: {
-          responseModalities: ['AUDIO'],
+          responseModalities: [Modality.AUDIO],
           speechConfig: {
             voiceConfig: { prebuiltVoiceConfig: { voiceName: liveVoice } },
           },
