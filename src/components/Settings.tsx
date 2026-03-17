@@ -1,23 +1,29 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Settings as SettingsIcon, Download, Upload, Cloud, Bell, Save, CheckCircle2, AlertCircle, User, Image as ImageIcon, Video, Mic, Volume2, Loader2 } from 'lucide-react';
+import { Settings as SettingsIcon, Download, Upload, Cloud, Bell, Save, CheckCircle2, AlertCircle, User, Image as ImageIcon, Video, Mic, Volume2, Loader2, LogOut } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { GoogleGenAI, Modality } from '@google/genai';
+import { GoogleGenAI } from '@google/genai';
 import { getItems, importItems } from '../db';
+import { initAudio, getAudioContext } from '../utils/tts';
+import { useAuth } from '../AuthContext';
 
-export function Settings() {
+interface SettingsProps {
+  onClose?: () => void;
+}
+
+export function Settings({ onClose }: SettingsProps) {
+  const { user, logOut, cacaVoiceUses } = useAuth();
   const [appName, setAppName] = useState('ExoMind');
   const [userName, setUserName] = useState('');
   const [appIcon, setAppIcon] = useState<string | null>(null);
   const [reminderEnabled, setReminderEnabled] = useState(false);
   const [backupMode, setBackupMode] = useState<'automatic' | 'manual'>('manual');
   const [backupInterval, setBackupInterval] = useState<number>(7);
-  const [cloudProvider, setCloudProvider] = useState('');
-  const [cloudUrl, setCloudUrl] = useState('');
-  const [cloudToken, setCloudToken] = useState('');
   const [selectedVoice, setSelectedVoice] = useState('Zephyr');
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [status, setStatus] = useState<{ type: 'success' | 'error' | null; message: string }>({ type: null, message: '' });
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [isSuccess, setIsSuccess] = useState(false);
 
   useEffect(() => {
     // Load settings from localStorage
@@ -27,9 +33,6 @@ export function Settings() {
     setReminderEnabled(localStorage.getItem('backupReminderEnabled') === 'true');
     setBackupMode((localStorage.getItem('backupMode') as 'automatic' | 'manual') || 'manual');
     setBackupInterval(parseInt(localStorage.getItem('backupInterval') || '7', 10));
-    setCloudProvider(localStorage.getItem('cloudProvider') || '');
-    setCloudUrl(localStorage.getItem('cloudUrl') || '');
-    setCloudToken(localStorage.getItem('cloudToken') || '');
     setSelectedVoice(localStorage.getItem('exo_voice_preference') || 'Zephyr');
   }, []);
 
@@ -45,12 +48,15 @@ export function Settings() {
     localStorage.setItem('backupReminderEnabled', reminderEnabled.toString());
     localStorage.setItem('backupMode', backupMode);
     localStorage.setItem('backupInterval', backupInterval.toString());
-    localStorage.setItem('cloudProvider', cloudProvider);
-    localStorage.setItem('cloudUrl', cloudUrl);
-    localStorage.setItem('cloudToken', cloudToken);
     localStorage.setItem('exo_voice_preference', selectedVoice);
     window.dispatchEvent(new Event('settingsUpdated'));
-    showStatus('success', 'Configurações salvas com sucesso!');
+    
+    setIsSuccess(true);
+    setTimeout(() => {
+      if (onClose) {
+        onClose();
+      }
+    }, 1500);
   };
 
   const handleExport = async () => {
@@ -116,57 +122,102 @@ export function Settings() {
   const handlePreviewVoice = async () => {
     if (isPreviewing) return;
     setIsPreviewing(true);
+    initAudio();
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash-preview-tts",
-        contents: [{ parts: [{ text: "Parabéns, Você está conhecendo seu mais recente e mais completo assistente diário para todos os assuntos." }] }],
-        config: {
-          responseModalities: [Modality.AUDIO],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: { voiceName: selectedVoice },
+      if (selectedVoice === 'uHxni9EgaoUr7MGw3Der') {
+        const response = await fetch('/api/tts', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            text: "Parabéns, Você está conhecendo seu mais recente e mais completo assistente diário para todos os assuntos.",
+            voiceId: selectedVoice
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error('Falha ao gerar áudio com ElevenLabs');
+        }
+
+        const audioBlob = await response.blob();
+        const audioUrl = URL.createObjectURL(audioBlob);
+        const audio = new Audio(audioUrl);
+        
+        audio.onended = () => {
+          setIsPreviewing(false);
+          URL.revokeObjectURL(audioUrl);
+        };
+        
+        audio.play();
+        
+        // Increment usage after successful play
+        await incrementCacaVoiceUses();
+      } else {
+        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+        const response = await ai.models.generateContent({
+          model: "gemini-2.5-flash-preview-tts",
+          contents: [{ parts: [{ text: "Parabéns, Você está conhecendo seu mais recente e mais completo assistente diário para todos os assuntos." }] }],
+          config: {
+            responseModalities: ['AUDIO'],
+            speechConfig: {
+              voiceConfig: {
+                prebuiltVoiceConfig: { voiceName: selectedVoice },
+              },
             },
           },
-        },
-      });
+        });
 
-      const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-      if (base64Audio) {
-        const binaryString = atob(base64Audio);
-        const len = binaryString.length;
-        const bytes = new Uint8Array(len);
-        for (let i = 0; i < len; i++) {
-          bytes[i] = binaryString.charCodeAt(i);
-        }
-        
-        const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-        let audioBuffer: AudioBuffer;
-
-        try {
-          // Try decoding as a standard container (WAV, MP3, etc.)
-          audioBuffer = await audioCtx.decodeAudioData(bytes.buffer.slice(0));
-        } catch (decodeError) {
-          // Fallback: Assume raw 16-bit Linear PCM (24kHz)
-          console.warn('Standard decoding failed, attempting raw PCM playback', decodeError);
-          const pcmData = new Int16Array(bytes.buffer);
-          audioBuffer = audioCtx.createBuffer(1, pcmData.length, 24000);
-          const channelData = audioBuffer.getChannelData(0);
-          for (let i = 0; i < pcmData.length; i++) {
-            channelData[i] = pcmData[i] / 32768.0;
+        const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+        if (base64Audio) {
+          const binaryString = atob(base64Audio);
+          const len = binaryString.length;
+          const bytes = new Uint8Array(len);
+          for (let i = 0; i < len; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
           }
-        }
+          
+          const audioCtx = getAudioContext();
+          let audioBuffer: AudioBuffer;
 
-        const source = audioCtx.createBufferSource();
-        source.buffer = audioBuffer;
-        source.connect(audioCtx.destination);
-        source.start();
-        source.onended = () => {
+          try {
+            // Try decoding as a standard container (WAV, MP3, etc.)
+            audioBuffer = await new Promise<AudioBuffer>((resolveDecode, rejectDecode) => {
+              const decodePromise = audioCtx.decodeAudioData(
+                bytes.buffer.slice(0),
+                (decoded) => resolveDecode(decoded),
+                (err) => rejectDecode(err)
+              );
+              if (decodePromise) {
+                decodePromise.catch(rejectDecode);
+              }
+            });
+          } catch (decodeError) {
+            // Fallback: Assume raw 16-bit Linear PCM (24kHz)
+            console.warn('Standard decoding failed, attempting raw PCM playback', decodeError);
+            const pcmLength = Math.floor(len / 2);
+            audioBuffer = audioCtx.createBuffer(1, pcmLength, 24000);
+            const channelData = audioBuffer.getChannelData(0);
+            const dataView = new DataView(bytes.buffer);
+            for (let i = 0; i < pcmLength; i++) {
+              channelData[i] = dataView.getInt16(i * 2, true) / 32768.0;
+            }
+          }
+
+          if (audioCtx.state === 'suspended') {
+            await audioCtx.resume();
+          }
+
+          const source = audioCtx.createBufferSource();
+          source.buffer = audioBuffer;
+          source.connect(audioCtx.destination);
+          source.start();
+          source.onended = () => {
+            setIsPreviewing(false);
+          };
+        } else {
           setIsPreviewing(false);
-          audioCtx.close();
-        };
-      } else {
-        setIsPreviewing(false);
+        }
       }
     } catch (error) {
       console.error('Error previewing voice:', error);
@@ -196,6 +247,35 @@ export function Settings() {
         )}
 
         <div className="space-y-8">
+          {/* User Profile Section */}
+          <section className="bg-slate-800 border border-slate-700 rounded-2xl p-5">
+            <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+              <User size={20} className="text-blue-400" />
+              Sua Conta
+            </h3>
+            <div className="flex items-center gap-4 mb-6">
+              {user?.photoURL ? (
+                <img src={user.photoURL} alt="Profile" className="w-12 h-12 rounded-full border border-slate-600" referrerPolicy="no-referrer" />
+              ) : (
+                <div className="w-12 h-12 rounded-full bg-slate-700 flex items-center justify-center border border-slate-600">
+                  <User size={24} className="text-slate-400" />
+                </div>
+              )}
+              <div className="flex-1 overflow-hidden">
+                <p className="text-white font-medium truncate">{user?.displayName || 'Usuário'}</p>
+                <p className="text-slate-400 text-sm truncate">{user?.email}</p>
+              </div>
+            </div>
+            
+            <button
+              onClick={logOut}
+              className="w-full flex items-center justify-center gap-2 bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/20 py-3 px-4 rounded-xl font-medium transition-colors"
+            >
+              <LogOut size={18} />
+              Sair da conta
+            </button>
+          </section>
+
           {/* Personalization Section */}
           <section className="bg-slate-800 border border-slate-700 rounded-2xl p-5">
             <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
@@ -262,14 +342,17 @@ export function Settings() {
                 <option value="Puck">Puck (Masculina/Neutra - Descontraída)</option>
                 <option value="Charon">Charon (Masculina - Grave)</option>
                 <option value="Fenrir">Fenrir (Masculina - Enérgica)</option>
+                <option value="uHxni9EgaoUr7MGw3Der" disabled={cacaVoiceUses >= 5}>
+                  Cacá Voice (Premium) {cacaVoiceUses >= 5 ? '- Esgotado' : ''}
+                </option>
               </select>
               <button
                 onClick={handlePreviewVoice}
-                disabled={isPreviewing}
+                disabled={isPreviewing || (selectedVoice === 'uHxni9EgaoUr7MGw3Der' && cacaVoiceUses >= 5)}
                 className={`p-3 rounded-lg border transition-colors flex items-center justify-center min-w-[48px] ${
                   isPreviewing 
                     ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400' 
-                    : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-emerald-500 hover:text-emerald-400'
+                    : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-emerald-500 hover:text-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed'
                 }`}
                 title="Ouvir prévia"
               >
@@ -280,6 +363,23 @@ export function Settings() {
                 )}
               </button>
             </div>
+            {selectedVoice === 'uHxni9EgaoUr7MGw3Der' && (
+              <div className="mt-4 p-4 bg-purple-500/10 border border-purple-500/20 rounded-xl">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-sm font-medium text-purple-300">Uso da Voz Premium (Cacá)</span>
+                  <span className="text-sm font-bold text-purple-400">{cacaVoiceUses} / 5</span>
+                </div>
+                <div className="w-full bg-slate-900 rounded-full h-2 overflow-hidden">
+                  <div 
+                    className="bg-purple-500 h-2 rounded-full transition-all" 
+                    style={{ width: `${(cacaVoiceUses / 5) * 100}%` }}
+                  ></div>
+                </div>
+                <p className="text-xs text-slate-400 mt-2">
+                  A voz clonada é um recurso premium limitado a 5 interações na versão gratuita.
+                </p>
+              </div>
+            )}
           </section>
 
           {/* Backup Section */}
@@ -387,56 +487,15 @@ export function Settings() {
             </div>
           </section>
 
-          {/* Cloud Config Section */}
-          <section className="bg-slate-800 border border-slate-700 rounded-2xl p-5">
-            <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-              <Cloud size={20} className="text-emerald-400" />
-              Armazenamento em Nuvem (Backup e Mídias)
-            </h3>
-            <p className="text-slate-400 text-sm mb-6">
-              Configure os dados do seu provedor de nuvem (ex: Google Drive, AWS S3, Nextcloud). Esta conta única servirá tanto para o <strong>Backup Automático</strong> de segurança quanto para o <strong>Armazenamento de Mídias Pesadas</strong> (como Vídeos, que não cabem no armazenamento local do navegador).
-            </p>
-            
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-400 mb-1">Provedor / Serviço</label>
-                <input
-                  type="text"
-                  value={cloudProvider}
-                  onChange={(e) => setCloudProvider(e.target.value)}
-                  placeholder="Ex: Google Drive, Nextcloud, Servidor Próprio"
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-400 mb-1">URL do Servidor (Opcional)</label>
-                <input
-                  type="url"
-                  value={cloudUrl}
-                  onChange={(e) => setCloudUrl(e.target.value)}
-                  placeholder="https://..."
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-400 mb-1">Token de Acesso / Chave API</label>
-                <input
-                  type="password"
-                  value={cloudToken}
-                  onChange={(e) => setCloudToken(e.target.value)}
-                  placeholder="••••••••••••••••"
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none text-sm"
-                />
-              </div>
-            </div>
-          </section>
-
           <button
             onClick={handleSaveSettings}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-4 rounded-xl transition-colors flex items-center justify-center gap-2 mb-12"
+            disabled={isSuccess}
+            className={`w-full font-medium py-3 px-4 rounded-xl transition-colors flex items-center justify-center gap-2 mb-12 disabled:opacity-50 disabled:cursor-not-allowed ${
+              isSuccess ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white'
+            }`}
           >
-            <Save size={20} />
-            Salvar Configurações
+            {isSuccess ? <CheckCircle2 size={20} /> : <Save size={20} />}
+            {isSuccess ? 'Salvo com sucesso!' : 'Salvar Configurações'}
           </button>
           
           <div className="border-t border-slate-800 pt-8 pb-12 text-center">

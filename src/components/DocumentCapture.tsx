@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Camera, Save, X, Image as ImageIcon } from 'lucide-react';
+import { Camera, Save, X, Image as ImageIcon, Loader2, CheckCircle2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { saveItem } from '../db';
 import { generateItemMetadata } from '../utils/aiMetadata';
@@ -13,6 +13,7 @@ export function DocumentCapture({ onSaved, onCancel }: Props) {
   const [photo, setPhoto] = useState<string | null>(null);
   const [description, setDescription] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -20,7 +21,36 @@ export function DocumentCapture({ onSaved, onCancel }: Props) {
     if (file) {
       const reader = new FileReader();
       reader.onloadend = () => {
-        setPhoto(reader.result as string);
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const MAX_WIDTH = 1024;
+          const MAX_HEIGHT = 1024;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height) {
+            if (width > MAX_WIDTH) {
+              height *= MAX_WIDTH / width;
+              width = MAX_WIDTH;
+            }
+          } else {
+            if (height > MAX_HEIGHT) {
+              width *= MAX_HEIGHT / height;
+              height = MAX_HEIGHT;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx?.drawImage(img, 0, 0, width, height);
+          
+          // Compress to JPEG with 0.7 quality
+          const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
+          setPhoto(compressedBase64);
+        };
+        img.src = reader.result as string;
       };
       reader.readAsDataURL(file);
     }
@@ -43,9 +73,13 @@ export function DocumentCapture({ onSaved, onCancel }: Props) {
         },
         timestamp: Date.now(),
       });
-      onSaved();
+      setIsSuccess(true);
+      setTimeout(() => {
+        onSaved();
+      }, 1500);
     } catch (error) {
       console.error('Error saving photo:', error);
+      alert('Erro ao salvar a foto. Tente novamente.');
       setIsSaving(false);
     }
   };
@@ -101,6 +135,7 @@ export function DocumentCapture({ onSaved, onCancel }: Props) {
             <div className="flex flex-col gap-2">
               <label className="text-sm font-medium text-slate-300">Descrição / Critérios</label>
               <textarea
+                autoFocus
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Ex: Recibo do almoço de negócios, CNH, etc..."
@@ -110,11 +145,13 @@ export function DocumentCapture({ onSaved, onCancel }: Props) {
 
             <button
               onClick={handleSave}
-              disabled={!description.trim() || isSaving}
-              className="w-full py-4 bg-purple-600 hover:bg-purple-700 disabled:bg-slate-700 disabled:text-slate-500 text-white rounded-xl font-medium transition-colors flex items-center justify-center gap-2 mt-auto"
+              disabled={!description.trim() || isSaving || isSuccess}
+              className={`w-full py-4 rounded-xl font-medium transition-colors flex items-center justify-center gap-2 mt-auto disabled:opacity-50 disabled:cursor-not-allowed ${
+                isSuccess ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'bg-purple-600 hover:bg-purple-700 text-white'
+              }`}
             >
-              <Save size={20} />
-              {isSaving ? 'Salvando...' : 'Salvar Documento'}
+              {isSaving ? <Loader2 className="animate-spin" size={20} /> : isSuccess ? <CheckCircle2 size={20} /> : <Save size={20} />}
+              {isSuccess ? 'Salvo com sucesso!' : isSaving ? 'Salvando...' : 'Salvar Documento'}
             </button>
           </div>
         )}

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Camera, MapPin, FileText, Loader2, Trash2, Calendar, Folder, ArrowLeft, ArrowDownAZ, ArrowUpAZ, CalendarDays, Share2, Maximize2, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { getItems, initDB } from '../db';
+import { getItems, deleteItem } from '../db';
 
 type ItemCategory = 'note' | 'photo' | 'location' | 'schedule' | null;
 type SortOption = 'date_desc' | 'date_asc' | 'name_asc' | 'name_desc';
@@ -31,8 +31,7 @@ export function SavedItems() {
 
   const handleDelete = async (id: string) => {
     try {
-      const db = await initDB();
-      await db.delete('items', id);
+      await deleteItem(id);
       loadItems();
     } catch (error) {
       console.error('Error deleting item:', error);

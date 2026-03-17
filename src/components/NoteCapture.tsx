@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, MicOff, Loader2, Save, X } from 'lucide-react';
+import { Mic, MicOff, Loader2, Save, X, CheckCircle2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { saveItem } from '../db';
-import { GoogleGenAI, LiveServerMessage, Modality } from '@google/genai';
+import { GoogleGenAI, LiveServerMessage } from '@google/genai';
 import { generateItemMetadata } from '../utils/aiMetadata';
 import { AudioVisualizer } from './AudioVisualizer';
 
@@ -21,6 +21,7 @@ export function NoteCapture({ inputMode, onSaved, onCancel }: NoteCaptureProps) 
   const [isConnecting, setIsConnecting] = useState(false);
   const [statusText, setStatusText] = useState('Toque para iniciar');
   const [stream, setStream] = useState<MediaStream | null>(null);
+  const [isSuccess, setIsSuccess] = useState(false);
   
   const sessionRef = useRef<any>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -47,16 +48,17 @@ export function NoteCapture({ inputMode, onSaved, onCancel }: NoteCaptureProps) 
       processor.connect(audioContext.destination);
 
       const selectedVoice = localStorage.getItem('exo_voice_preference') || 'Zephyr';
+      const liveVoice = selectedVoice === 'uHxni9EgaoUr7MGw3Der' ? 'Zephyr' : selectedVoice;
 
       const sessionPromise = ai.live.connect({
         model: 'gemini-2.5-flash-native-audio-preview-09-2025',
         config: {
-          responseModalities: [Modality.AUDIO],
+          responseModalities: ['AUDIO'],
           speechConfig: {
-            voiceConfig: { prebuiltVoiceConfig: { voiceName: selectedVoice } },
+            voiceConfig: { prebuiltVoiceConfig: { voiceName: liveVoice } },
           },
-          systemInstruction: 'Aja EXCLUSIVAMENTE como um transcritor de áudio. O usuário vai falar em Português do Brasil. Escreva EXATAMENTE o que ele disser, palavra por palavra, em Português do Brasil. NÃO converse, NÃO responda perguntas, NÃO adicione comentários. Apenas retorne o texto do que foi dito.',
-          outputAudioTranscription: {},
+          systemInstruction: 'Você está no modo de ditado. Apenas ouça o usuário. Não responda, não converse, não faça perguntas. Apenas ouça.',
+          inputAudioTranscription: {},
         },
         callbacks: {
           onopen: () => {
@@ -86,35 +88,15 @@ export function NoteCapture({ inputMode, onSaved, onCancel }: NoteCaptureProps) 
             };
           },
           onmessage: async (message: LiveServerMessage) => {
-            const base64Audio = message.serverContent?.modelTurn?.parts[0]?.inlineData?.data;
-            if (base64Audio) {
-              setStatusText('Falando...');
-              const binaryString = atob(base64Audio);
-              const len = binaryString.length;
-              const bytes = new Uint8Array(len);
-              for (let i = 0; i < len; i++) {
-                bytes[i] = binaryString.charCodeAt(i);
-              }
-              
-              const audioCtx = new AudioContext({ sampleRate: 24000 });
-              try {
-                const audioBuffer = await audioCtx.decodeAudioData(bytes.buffer);
-                const source = audioCtx.createBufferSource();
-                source.buffer = audioBuffer;
-                source.connect(audioCtx.destination);
-                source.start();
-                source.onended = () => {
-                  if (isRecording) setStatusText('Ouvindo...');
-                };
-              } catch (e) {
-                console.error('Error decoding audio', e);
-              }
-            }
-            
-            // Handle transcription
-            const text = message.serverContent?.modelTurn?.parts[0]?.text;
-            if (text) {
-               setNote(prev => prev + ' ' + text);
+            // Handle user transcription
+            const transcription = message.serverContent?.inputTranscription;
+            if (transcription && transcription.text) {
+              setNote(prev => {
+                // Se for o primeiro texto, apenas define
+                if (!prev) return transcription.text || '';
+                // Se já tiver texto, adiciona com espaço
+                return prev + (prev.endsWith(' ') ? '' : ' ') + transcription.text;
+              });
             }
           },
           onclose: () => {
@@ -182,10 +164,12 @@ export function NoteCapture({ inputMode, onSaved, onCancel }: NoteCaptureProps) 
           summary: metadata?.summary
         }
       });
-      onSaved();
+      setIsSuccess(true);
+      setTimeout(() => {
+        onSaved();
+      }, 1500);
     } catch (error) {
       console.error('Error saving note:', error);
-    } finally {
       setIsSaving(false);
     }
   };
@@ -238,6 +222,7 @@ export function NoteCapture({ inputMode, onSaved, onCancel }: NoteCaptureProps) 
         <div className="mb-6">
           <label className="block text-sm font-medium text-slate-400 mb-2">Nota</label>
           <textarea
+            autoFocus
             value={note}
             onChange={(e) => setNote(e.target.value)}
             className="w-full bg-slate-900 border border-slate-700 rounded-xl p-4 text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-none h-32"
@@ -247,11 +232,13 @@ export function NoteCapture({ inputMode, onSaved, onCancel }: NoteCaptureProps) 
 
         <button
           onClick={handleSave}
-          disabled={!note.trim() || isSaving}
-          className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-4 rounded-xl transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          disabled={!note.trim() || isSaving || isSuccess}
+          className={`w-full font-medium py-3 px-4 rounded-xl transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed ${
+            isSuccess ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white'
+          }`}
         >
-          {isSaving ? <Loader2 className="animate-spin" size={20} /> : <Save size={20} />}
-          Salvar
+          {isSaving ? <Loader2 className="animate-spin" size={20} /> : isSuccess ? <CheckCircle2 size={20} /> : <Save size={20} />}
+          {isSuccess ? 'Salvo com sucesso!' : 'Salvar'}
         </button>
       </div>
     </motion.div>

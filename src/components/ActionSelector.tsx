@@ -1,12 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { MessageSquare, Camera, MapPin, Calendar, Search, Loader2, Video } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { GoogleGenAI, Modality } from '@google/genai';
-
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+import { playTTS, initAudio } from '../utils/tts';
+import { useAuth } from '../AuthContext';
 
 type InputMode = 'text' | 'voice';
-type ActionType = 'comentar' | 'fotografar' | 'salvar_local' | 'agendar' | 'consultar' | 'video';
+type ActionType = 'comentar' | 'fotografar' | 'salvar_local' | 'agendar' | 'consultar';
 
 interface ActionSelectorProps {
   inputMode: InputMode;
@@ -14,6 +13,7 @@ interface ActionSelectorProps {
 }
 
 export function ActionSelector({ inputMode, onSelectAction }: ActionSelectorProps) {
+  const { cacaVoiceUses, incrementCacaVoiceUses } = useAuth();
   const [isSpeaking, setIsSpeaking] = useState(false);
 
   useEffect(() => {
@@ -25,38 +25,16 @@ export function ActionSelector({ inputMode, onSelectAction }: ActionSelectorProp
   const speakOptions = async () => {
     setIsSpeaking(true);
     try {
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash-preview-tts",
-        contents: [{ parts: [{ text: 'O que você deseja fazer? Comentar, Fotografar, Salvar Local, Agendar ou Consultar?' }] }],
-        config: {
-          responseModalities: [Modality.AUDIO],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: { voiceName: 'Zephyr' },
-            },
-          },
-        },
-      });
-
-      const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-      if (base64Audio) {
-        const binaryString = atob(base64Audio);
-        const len = binaryString.length;
-        const bytes = new Uint8Array(len);
-        for (let i = 0; i < len; i++) {
-          bytes[i] = binaryString.charCodeAt(i);
-        }
-        
-        const audioCtx = new AudioContext({ sampleRate: 24000 });
-        const audioBuffer = await audioCtx.decodeAudioData(bytes.buffer);
-        const source = audioCtx.createBufferSource();
-        source.buffer = audioBuffer;
-        source.connect(audioCtx.destination);
-        source.start();
-        source.onended = () => setIsSpeaking(false);
-      } else {
-        setIsSpeaking(false);
+      let selectedVoice = localStorage.getItem('exo_voice_preference') || 'Zephyr';
+      if (selectedVoice === 'uHxni9EgaoUr7MGw3Der' && cacaVoiceUses >= 5) {
+        selectedVoice = 'Zephyr'; // Fallback if limit reached
       }
+      
+      await playTTS('O que você deseja fazer? Comentar, Fotografar, Salvar Local, Agendar ou Consultar?', selectedVoice);
+      if (selectedVoice === 'uHxni9EgaoUr7MGw3Der') {
+        await incrementCacaVoiceUses();
+      }
+      setIsSpeaking(false);
     } catch (error) {
       console.error('Error speaking options:', error);
       setIsSpeaking(false);
@@ -68,7 +46,6 @@ export function ActionSelector({ inputMode, onSelectAction }: ActionSelectorProp
     { id: 'fotografar', label: 'Fotografar', icon: <Camera size={28} />, color: 'text-purple-400' },
     { id: 'salvar_local', label: 'Local', icon: <MapPin size={28} />, color: 'text-orange-400' },
     { id: 'agendar', label: 'Agendar', icon: <Calendar size={28} />, color: 'text-emerald-400' },
-    { id: 'video', label: 'Vídeo', icon: <Video size={28} />, color: 'text-red-400' },
     { id: 'consultar', label: 'Consultar', icon: <Search size={28} />, color: 'text-rose-400' },
   ];
 
@@ -97,17 +74,13 @@ export function ActionSelector({ inputMode, onSelectAction }: ActionSelectorProp
           <button
             key={action.id}
             onClick={() => {
-              if (action.id === 'video') {
-                alert('Para salvar vídeos, configure um serviço de armazenamento em nuvem na tela de Configurações.');
-              } else {
-                onSelectAction(action.id as ActionType);
-              }
+              initAudio(); // Initialize audio context on user interaction
+              onSelectAction(action.id as ActionType);
             }}
-            className={`flex flex-col items-center justify-center p-6 bg-slate-800 hover:bg-slate-700 rounded-2xl border border-slate-700 transition-all shadow-lg ${action.id === 'video' ? 'opacity-50 cursor-not-allowed' : ''} ${action.id === 'consultar' ? 'col-span-2' : ''}`}
+            className={`flex flex-col items-center justify-center p-6 bg-slate-800 hover:bg-slate-700 rounded-2xl border border-slate-700 transition-all shadow-lg ${action.id === 'consultar' ? 'col-span-2' : ''}`}
           >
             <div className={`mb-3 ${action.color}`}>{action.icon}</div>
             <span className="font-medium text-slate-200">{action.label}</span>
-            {action.id === 'video' && <span className="text-[10px] text-slate-400 mt-1 uppercase tracking-wider">Requer Nuvem</span>}
           </button>
         ))}
       </div>

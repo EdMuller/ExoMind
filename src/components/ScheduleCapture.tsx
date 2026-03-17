@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Calendar, Save, X, Loader2 } from 'lucide-react';
+import { Calendar, Save, X, Loader2, CheckCircle2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { saveItem } from '../db';
 import { generateItemMetadata } from '../utils/aiMetadata';
@@ -16,6 +16,7 @@ export function ScheduleCapture({ inputMode, onSaved, onCancel }: ScheduleCaptur
   const [time, setTime] = useState('');
   const [description, setDescription] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
 
   const handleSave = async () => {
     if (!title.trim() || !date || !time) return;
@@ -39,10 +40,12 @@ export function ScheduleCapture({ inputMode, onSaved, onCancel }: ScheduleCaptur
         },
         timestamp: Date.now(),
       });
-      onSaved();
+      setIsSuccess(true);
+      setTimeout(() => {
+        onSaved();
+      }, 1500);
     } catch (error) {
       console.error('Error saving schedule:', error);
-    } finally {
       setIsSaving(false);
     }
   };
@@ -68,6 +71,7 @@ export function ScheduleCapture({ inputMode, onSaved, onCancel }: ScheduleCaptur
           <div>
             <label className="block text-sm font-medium text-slate-400 mb-2">Título do Evento</label>
             <input
+              autoFocus
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
@@ -108,11 +112,13 @@ export function ScheduleCapture({ inputMode, onSaved, onCancel }: ScheduleCaptur
 
         <button
           onClick={handleSave}
-          disabled={!title.trim() || !date || !time || isSaving}
-          className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-3 px-4 rounded-xl transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          disabled={!title.trim() || !date || !time || isSaving || isSuccess}
+          className={`w-full font-medium py-3 px-4 rounded-xl transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed ${
+            isSuccess ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+          }`}
         >
-          {isSaving ? <Loader2 className="animate-spin" size={20} /> : <Save size={20} />}
-          Salvar Agendamento
+          {isSaving ? <Loader2 className="animate-spin" size={20} /> : isSuccess ? <CheckCircle2 size={20} /> : <Save size={20} />}
+          {isSuccess ? 'Salvo com sucesso!' : 'Salvar Agendamento'}
         </button>
       </div>
     </motion.div>

@@ -3,6 +3,7 @@ import { Mic, MicOff, Loader2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { GoogleGenAI, LiveServerMessage, Modality } from '@google/genai';
 import { AudioVisualizer } from './AudioVisualizer';
+import { initAudio, getAudioContext } from '../utils/tts';
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
@@ -19,6 +20,7 @@ export function VoiceChat() {
   const startSession = async () => {
     setIsConnecting(true);
     setStatusText('Conectando...');
+    initAudio();
 
     try {
       const mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -36,13 +38,14 @@ export function VoiceChat() {
       processor.connect(audioContext.destination);
 
       const selectedVoice = localStorage.getItem('exo_voice_preference') || 'Zephyr';
+      const liveVoice = selectedVoice === 'uHxni9EgaoUr7MGw3Der' ? 'Zephyr' : selectedVoice;
 
       const sessionPromise = ai.live.connect({
         model: 'gemini-2.5-flash-native-audio-preview-09-2025',
         config: {
           responseModalities: [Modality.AUDIO],
           speechConfig: {
-            voiceConfig: { prebuiltVoiceConfig: { voiceName: selectedVoice } },
+            voiceConfig: { prebuiltVoiceConfig: { voiceName: liveVoice } },
           },
           systemInstruction: 'Você é o ExoMind, um assistente de voz útil e amigável. Responda sempre de forma concisa e natural exclusivamente em Português do Brasil.',
         },
@@ -85,9 +88,21 @@ export function VoiceChat() {
                 bytes[i] = binaryString.charCodeAt(i);
               }
               
-              const audioCtx = new AudioContext({ sampleRate: 24000 });
+              const audioCtx = getAudioContext();
+              if (audioCtx.state === 'suspended') {
+                await audioCtx.resume();
+              }
               try {
-                const audioBuffer = await audioCtx.decodeAudioData(bytes.buffer);
+                const audioBuffer = await new Promise<AudioBuffer>((resolveDecode, rejectDecode) => {
+                  const decodePromise = audioCtx.decodeAudioData(
+                    bytes.buffer.slice(0),
+                    (decoded) => resolveDecode(decoded),
+                    (err) => rejectDecode(err)
+                  );
+                  if (decodePromise) {
+                    decodePromise.catch(rejectDecode);
+                  }
+                });
                 const source = audioCtx.createBufferSource();
                 source.buffer = audioBuffer;
                 source.connect(audioCtx.destination);
@@ -96,7 +111,21 @@ export function VoiceChat() {
                   if (isRecording) setStatusText('Ouvindo...');
                 };
               } catch (e) {
-                console.error('Error decoding audio', e);
+                // Fallback: Assume raw 16-bit Linear PCM (24kHz)
+                const pcmLength = Math.floor(len / 2);
+                const audioBuffer = audioCtx.createBuffer(1, pcmLength, 24000);
+                const channelData = audioBuffer.getChannelData(0);
+                const dataView = new DataView(bytes.buffer);
+                for (let i = 0; i < pcmLength; i++) {
+                  channelData[i] = dataView.getInt16(i * 2, true) / 32768.0;
+                }
+                const source = audioCtx.createBufferSource();
+                source.buffer = audioBuffer;
+                source.connect(audioCtx.destination);
+                source.start();
+                source.onended = () => {
+                  if (isRecording) setStatusText('Ouvindo...');
+                };
               }
             }
           },

@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Send, Loader2, Bot, User, Mic, MicOff, X, Image as ImageIcon } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { GoogleGenAI, LiveServerMessage, Modality, Type } from '@google/genai';
+import { GoogleGenAI, LiveServerMessage, Type } from '@google/genai';
 import { getItems } from '../db';
+import { playTTS, initAudio, getAudioContext } from '../utils/tts';
+import { useAuth } from '../AuthContext';
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
@@ -19,6 +21,7 @@ interface Message {
 }
 
 export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
+  const { cacaVoiceUses, incrementCacaVoiceUses } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -34,7 +37,6 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
   const [isConnecting, setIsConnecting] = useState(false);
   const sessionRef = useRef<any>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
-  const playbackContextRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
 
@@ -102,10 +104,20 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
   const handleSendText = async () => {
     if (!input.trim() || isLoading) return;
 
+    initAudio(); // Initialize audio context on user interaction
+
     const userMsg = input.trim();
     setInput('');
     setMessages(prev => [...prev, { id: Date.now().toString(), role: 'user', content: userMsg }]);
     setIsLoading(true);
+    
+    let selectedVoice = localStorage.getItem('exo_voice_preference') || 'Zephyr';
+    if (selectedVoice === 'uHxni9EgaoUr7MGw3Der' && cacaVoiceUses >= 5) {
+      selectedVoice = 'Zephyr'; // Fallback if limit reached
+    }
+    
+    // Feedback de áudio suave (processando) - use Zephyr to save Cacá uses
+    playTTS("Processando sua pergunta...", selectedVoice === 'uHxni9EgaoUr7MGw3Der' ? 'Zephyr' : selectedVoice);
 
     try {
       const response = await ai.models.generateContent({
@@ -125,6 +137,12 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
         content: processed.text,
         images: processed.images
       }]);
+      
+      // Ler a resposta em voz alta
+      await playTTS(processed.text, selectedVoice);
+      if (selectedVoice === 'uHxni9EgaoUr7MGw3Der') {
+        await incrementCacaVoiceUses();
+      }
     } catch (error) {
       console.error('Error generating response:', error);
       setMessages(prev => [...prev, { 
@@ -132,6 +150,7 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
         role: 'model', 
         content: 'Ocorreu um erro ao processar sua solicitação.' 
       }]);
+      playTTS('Ocorreu um erro ao processar sua solicitação.', selectedVoice === 'uHxni9EgaoUr7MGw3Der' ? 'Zephyr' : selectedVoice);
     } finally {
       setIsLoading(false);
     }
@@ -140,6 +159,10 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
   const startVoiceSession = async () => {
     setIsConnecting(true);
     setDisplayedImage(null);
+    
+    const selectedVoice = localStorage.getItem('exo_voice_preference') || 'Zephyr';
+    // Gemini Live API requires a prebuilt voice. If it's an ElevenLabs ID, fallback to Zephyr for the Live API.
+    const liveVoice = selectedVoice === 'uHxni9EgaoUr7MGw3Der' ? 'Zephyr' : selectedVoice;
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -158,9 +181,9 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
       const sessionPromise = ai.live.connect({
         model: 'gemini-2.5-flash-native-audio-preview-09-2025',
         config: {
-          responseModalities: [Modality.AUDIO],
+          responseModalities: ['AUDIO'],
           speechConfig: {
-            voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Zephyr' } },
+            voiceConfig: { prebuiltVoiceConfig: { voiceName: liveVoice } },
           },
           systemInstruction: dbContextVoice,
           tools: [{
@@ -218,25 +241,36 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
                 bytes[i] = binaryString.charCodeAt(i);
               }
               
-              if (!playbackContextRef.current) {
-                playbackContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+              const audioCtx = getAudioContext();
+              
+              if (audioCtx.state === 'suspended') {
+                await audioCtx.resume();
               }
-              const audioCtx = playbackContextRef.current;
               
               try {
                 // Try decoding as a standard container first
-                const audioBuffer = await audioCtx.decodeAudioData(bytes.buffer.slice(0));
+                const audioBuffer = await new Promise<AudioBuffer>((resolveDecode, rejectDecode) => {
+                  const decodePromise = audioCtx.decodeAudioData(
+                    bytes.buffer.slice(0),
+                    (decoded) => resolveDecode(decoded),
+                    (err) => rejectDecode(err)
+                  );
+                  if (decodePromise) {
+                    decodePromise.catch(rejectDecode);
+                  }
+                });
                 const source = audioCtx.createBufferSource();
                 source.buffer = audioBuffer;
                 source.connect(audioCtx.destination);
                 source.start();
               } catch (e) {
                 // Fallback: Assume raw 16-bit Linear PCM (24kHz)
-                const pcmData = new Int16Array(bytes.buffer);
-                const audioBuffer = audioCtx.createBuffer(1, pcmData.length, 24000);
+                const pcmLength = Math.floor(len / 2);
+                const audioBuffer = audioCtx.createBuffer(1, pcmLength, 24000);
                 const channelData = audioBuffer.getChannelData(0);
-                for (let i = 0; i < pcmData.length; i++) {
-                  channelData[i] = pcmData[i] / 32768.0;
+                const dataView = new DataView(bytes.buffer);
+                for (let i = 0; i < pcmLength; i++) {
+                  channelData[i] = dataView.getInt16(i * 2, true) / 32768.0;
                 }
                 const source = audioCtx.createBufferSource();
                 source.buffer = audioBuffer;
@@ -297,10 +331,6 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
     if (audioContextRef.current) {
       audioContextRef.current.close();
       audioContextRef.current = null;
-    }
-    if (playbackContextRef.current) {
-      playbackContextRef.current.close();
-      playbackContextRef.current = null;
     }
     if (sessionRef.current) {
       try {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { MapPin, Save, Loader2, Navigation, X } from 'lucide-react';
+import { MapPin, Save, Loader2, Navigation, X, CheckCircle2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { saveItem } from '../db';
 import { generateItemMetadata } from '../utils/aiMetadata';
@@ -15,6 +15,7 @@ export function LocationCapture({ onSaved, onCancel }: Props) {
   const [isSaving, setIsSaving] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isSuccess, setIsSuccess] = useState(false);
 
   const getLocation = () => {
     setIsLocating(true);
@@ -64,7 +65,10 @@ export function LocationCapture({ onSaved, onCancel }: Props) {
         },
         timestamp: Date.now(),
       });
-      onSaved();
+      setIsSuccess(true);
+      setTimeout(() => {
+        onSaved();
+      }, 1500);
     } catch (error) {
       console.error('Error saving location:', error);
       setIsSaving(false);
@@ -128,6 +132,7 @@ export function LocationCapture({ onSaved, onCancel }: Props) {
           <div className="flex flex-col gap-2">
             <label className="text-sm font-medium text-slate-300">Descrição do Local / Evento</label>
             <textarea
+              autoFocus
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Ex: Onde estacionei o carro, Local da reunião com cliente..."
@@ -137,11 +142,13 @@ export function LocationCapture({ onSaved, onCancel }: Props) {
 
           <button
             onClick={handleSave}
-            disabled={!location || !description.trim() || isSaving}
-            className="w-full py-4 bg-orange-600 hover:bg-orange-700 disabled:bg-slate-700 disabled:text-slate-500 text-white rounded-xl font-medium transition-colors flex items-center justify-center gap-2 mt-auto"
+            disabled={!location || !description.trim() || isSaving || isSuccess}
+            className={`w-full py-4 rounded-xl font-medium transition-colors flex items-center justify-center gap-2 mt-auto disabled:opacity-50 disabled:cursor-not-allowed ${
+              isSuccess ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'bg-orange-600 hover:bg-orange-700 text-white'
+            }`}
           >
-            <Save size={20} />
-            {isSaving ? 'Salvando...' : 'Salvar Localização'}
+            {isSaving ? <Loader2 className="animate-spin" size={20} /> : isSuccess ? <CheckCircle2 size={20} /> : <Save size={20} />}
+            {isSuccess ? 'Salvo com sucesso!' : isSaving ? 'Salvando...' : 'Salvar Localização'}
           </button>
         </div>
       </div>

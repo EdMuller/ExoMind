@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Mic, Keyboard, List, ArrowLeft, Settings as SettingsIcon } from 'lucide-react';
+import { Mic, Keyboard, List, ArrowLeft, Settings as SettingsIcon, LogIn, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ActionSelector } from './components/ActionSelector';
 import { NoteCapture } from './components/NoteCapture';
@@ -9,12 +9,15 @@ import { ScheduleCapture } from './components/ScheduleCapture';
 import { ConsultChat } from './components/ConsultChat';
 import { SavedItems } from './components/SavedItems';
 import { Settings } from './components/Settings';
+import { initAudio } from './utils/tts';
+import { useAuth } from './AuthContext';
 
 type InputMode = 'text' | 'voice' | null;
 type ActionType = 'comentar' | 'fotografar' | 'salvar_local' | 'agendar' | 'consultar' | null;
 type ViewState = 'home' | 'action_selector' | 'action_execute' | 'saved' | 'settings';
 
 export default function App() {
+  const { user, loading, signIn } = useAuth();
   const [view, setView] = useState<ViewState>('home');
   const [inputMode, setInputMode] = useState<InputMode>(null);
   const [action, setAction] = useState<ActionType>(null);
@@ -76,6 +79,7 @@ export default function App() {
   }, []);
 
   const handleSelectInputMode = (mode: InputMode) => {
+    initAudio(); // Initialize audio context on user interaction
     setInputMode(mode);
     setView('action_selector');
   };
@@ -102,6 +106,41 @@ export default function App() {
     setInputMode(null);
     setView('home');
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-900 text-slate-200 flex flex-col items-center justify-center font-sans">
+        <Loader2 className="animate-spin text-blue-500 mb-4" size={48} />
+        <p className="text-slate-400">Carregando {appName}...</p>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-slate-900 text-slate-200 flex flex-col items-center justify-center font-sans p-6">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="max-w-md w-full bg-slate-800 p-8 rounded-3xl border border-slate-700 shadow-2xl text-center"
+        >
+          <div className="w-20 h-20 bg-blue-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
+            <Mic size={40} className="text-blue-400" />
+          </div>
+          <h1 className="text-3xl font-bold mb-2 text-white">Bem-vindo ao {appName}</h1>
+          <p className="text-slate-400 mb-8">Seu segundo cérebro, agora na nuvem. Faça login para continuar.</p>
+          
+          <button
+            onClick={signIn}
+            className="w-full flex items-center justify-center gap-3 bg-white text-slate-900 py-4 px-6 rounded-xl font-semibold text-lg hover:bg-slate-100 transition-colors"
+          >
+            <LogIn size={24} />
+            Entrar com Google
+          </button>
+        </motion.div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-200 flex flex-col font-sans">
@@ -194,7 +233,7 @@ export default function App() {
           )}
 
           {view === 'saved' && <SavedItems />}
-          {view === 'settings' && <Settings />}
+          {view === 'settings' && <Settings onClose={handleSaved} />}
         </AnimatePresence>
       </main>
     </div>
