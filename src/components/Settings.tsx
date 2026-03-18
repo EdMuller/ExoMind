@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Settings as SettingsIcon, Download, Upload, Cloud, Bell, Save, CheckCircle2, AlertCircle, User, Image as ImageIcon, Video, Mic, Volume2, Loader2, LogOut } from 'lucide-react';
+import { Settings as SettingsIcon, Download, Upload, Cloud, Bell, Save, CheckCircle2, AlertCircle, User, Image as ImageIcon, Video, Mic, Volume2, Loader2, LogOut, Share2, FileText, QrCode } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { QRCodeSVG } from 'qrcode.react';
 import { getAI } from '../utils/ai';
 import { getItems, importItems } from '../db';
 import { initAudio, getAudioContext } from '../utils/tts';
@@ -59,27 +60,50 @@ export function Settings({ onClose }: SettingsProps) {
     }, 1500);
   };
 
-  const handleExport = async () => {
+  const handleExport = async (format: 'json' | 'txt') => {
     try {
       const items = await getItems();
-      const dataStr = JSON.stringify(items, null, 2);
-      const dataBlob = new Blob([dataStr], { type: 'application/json' });
+      let dataStr = '';
+      let mimeType = '';
+      let extension = '';
+
+      if (format === 'json') {
+        dataStr = JSON.stringify(items, null, 2);
+        mimeType = 'application/json';
+        extension = 'json';
+      } else {
+        dataStr = items.map(i => {
+          const date = new Date(i.timestamp).toLocaleString('pt-BR');
+          return `Data: ${date}\nTipo: ${i.type.toUpperCase()}\nConteúdo:\n${i.content}\n----------------------------------------\n`;
+        }).join('\n');
+        mimeType = 'text/plain';
+        extension = 'txt';
+      }
+
+      const dataBlob = new Blob([dataStr], { type: mimeType });
       const url = URL.createObjectURL(dataBlob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `exomind-backup-${new Date().toISOString().split('T')[0]}.json`;
+      link.download = `exomind-backup-${new Date().toISOString().split('T')[0]}.${extension}`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
       
-      // Update last backup date
-      localStorage.setItem('lastBackupDate', Date.now().toString());
-      showStatus('success', 'Backup exportado com sucesso!');
+      if (format === 'json') {
+        localStorage.setItem('lastBackupDate', Date.now().toString());
+      }
+      showStatus('success', `Dados exportados com sucesso (.${extension})!`);
     } catch (error) {
       console.error('Error exporting backup:', error);
-      showStatus('error', 'Erro ao exportar backup.');
+      showStatus('error', 'Erro ao exportar dados.');
     }
+  };
+
+  const handleShareWhatsApp = () => {
+    const appUrl = window.location.origin;
+    const text = `Conheça o ExoMind, seu segundo cérebro na nuvem! Acesse: ${appUrl}`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
   };
 
   const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -458,16 +482,26 @@ export function Settings({ onClose }: SettingsProps) {
               </div>
 
               <div className="pt-4 border-t border-slate-700">
-                <p className="text-slate-400 text-sm mb-4">Ações Manuais</p>
-                <div className="grid grid-cols-2 gap-4">
+                <p className="text-slate-400 text-sm mb-4">Exportar e Restaurar Dados</p>
+                <div className="grid grid-cols-3 gap-4">
                   <button
-                    onClick={handleExport}
+                    onClick={() => handleExport('json')}
                     className="flex flex-col items-center justify-center p-4 bg-slate-900 border border-slate-700 hover:border-blue-500 rounded-xl transition-colors group"
+                    title="Exportar Backup (JSON)"
                   >
                     <Download size={24} className="text-slate-400 group-hover:text-blue-400 mb-2 transition-colors" />
-                    <span className="text-sm font-medium text-slate-300 group-hover:text-white transition-colors text-center">Exportar Arquivo</span>
+                    <span className="text-xs font-medium text-slate-300 group-hover:text-white transition-colors text-center">Backup (JSON)</span>
                   </button>
                   
+                  <button
+                    onClick={() => handleExport('txt')}
+                    className="flex flex-col items-center justify-center p-4 bg-slate-900 border border-slate-700 hover:border-emerald-500 rounded-xl transition-colors group"
+                    title="Exportar para Leitura (TXT)"
+                  >
+                    <FileText size={24} className="text-slate-400 group-hover:text-emerald-400 mb-2 transition-colors" />
+                    <span className="text-xs font-medium text-slate-300 group-hover:text-white transition-colors text-center">Ler (TXT)</span>
+                  </button>
+
                   <input
                     type="file"
                     accept=".json"
@@ -478,12 +512,46 @@ export function Settings({ onClose }: SettingsProps) {
                   <button
                     onClick={() => fileInputRef.current?.click()}
                     className="flex flex-col items-center justify-center p-4 bg-slate-900 border border-slate-700 hover:border-purple-500 rounded-xl transition-colors group"
+                    title="Restaurar Backup"
                   >
                     <Upload size={24} className="text-slate-400 group-hover:text-purple-400 mb-2 transition-colors" />
-                    <span className="text-sm font-medium text-slate-300 group-hover:text-white transition-colors text-center">Restaurar Arquivo</span>
+                    <span className="text-xs font-medium text-slate-300 group-hover:text-white transition-colors text-center">Restaurar</span>
                   </button>
                 </div>
               </div>
+            </div>
+          </section>
+
+          {/* Share Section */}
+          <section className="bg-slate-800 border border-slate-700 rounded-2xl p-5">
+            <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+              <Share2 size={20} className="text-pink-400" />
+              Compartilhar ExoMind
+            </h3>
+            <p className="text-slate-400 text-sm mb-6">
+              Gostou do ExoMind? Compartilhe com seus amigos para que eles também tenham um segundo cérebro.
+            </p>
+            
+            <div className="flex flex-col items-center gap-6">
+              <div className="bg-white p-4 rounded-2xl shadow-lg">
+                <QRCodeSVG 
+                  value={window.location.origin} 
+                  size={160}
+                  bgColor={"#ffffff"}
+                  fgColor={"#0f172a"}
+                  level={"L"}
+                  includeMargin={false}
+                />
+              </div>
+              <p className="text-sm text-slate-400">Escaneie o QR Code acima</p>
+              
+              <button
+                onClick={handleShareWhatsApp}
+                className="w-full flex items-center justify-center gap-2 bg-[#25D366] hover:bg-[#20bd5a] text-white py-3 px-4 rounded-xl font-medium transition-colors"
+              >
+                <Share2 size={18} />
+                Compartilhar via WhatsApp
+              </button>
             </div>
           </section>
 

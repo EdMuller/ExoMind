@@ -10,6 +10,8 @@ interface AuthContextType {
   logOut: () => Promise<void>;
   cacaVoiceUses: number;
   incrementCacaVoiceUses: () => Promise<void>;
+  isVip: boolean;
+  unlockVip: (code: string) => Promise<boolean>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -18,6 +20,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [cacaVoiceUses, setCacaVoiceUses] = useState(0);
+  const [isVip, setIsVip] = useState(false);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
@@ -32,11 +35,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             email: currentUser.email,
             displayName: currentUser.displayName,
             photoURL: currentUser.photoURL,
-            cacaVoiceUses: 0
+            cacaVoiceUses: 0,
+            isVip: false
           });
           setCacaVoiceUses(0);
+          setIsVip(false);
         } else {
-          setCacaVoiceUses(userSnap.data().cacaVoiceUses || 0);
+          const data = userSnap.data();
+          setCacaVoiceUses(data.cacaVoiceUses || 0);
+          setIsVip(data.isVip || false);
         }
       }
       setLoading(false);
@@ -63,7 +70,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const incrementCacaVoiceUses = async () => {
-    if (!user) return;
+    if (!user || isVip) return; // VIPs have unlimited uses
     const newUses = cacaVoiceUses + 1;
     if (newUses > 5) return;
     
@@ -72,8 +79,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setCacaVoiceUses(newUses);
   };
 
+  const unlockVip = async (code: string) => {
+    if (!user) return false;
+    const normalizedCode = code.trim().toUpperCase();
+    if (normalizedCode === 'CACÁ61' || normalizedCode === 'CACA61') {
+      const userRef = doc(db, 'users', user.uid);
+      await setDoc(userRef, { isVip: true }, { merge: true });
+      setIsVip(true);
+      return true;
+    }
+    return false;
+  };
+
   return (
-    <AuthContext.Provider value={{ user, loading, signIn, logOut, cacaVoiceUses, incrementCacaVoiceUses }}>
+    <AuthContext.Provider value={{ user, loading, signIn, logOut, cacaVoiceUses, incrementCacaVoiceUses, isVip, unlockVip }}>
       {children}
     </AuthContext.Provider>
   );
