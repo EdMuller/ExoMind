@@ -1,6 +1,41 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import { getAI } from './ai';
 
+export async function analyzeForSchedule(content: string) {
+  try {
+    const ai = getAI();
+    const prompt = `Analise o seguinte texto e determine se ele contém uma intenção clara de agendamento, compromisso, lembrete com data/hora, ou evento futuro.
+Se SIM, extraia os detalhes. Se NÃO, retorne isSchedule: false.
+
+Texto: "${content}"`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: prompt,
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            isSchedule: { type: Type.BOOLEAN, description: "Verdadeiro se o texto for um agendamento ou compromisso" },
+            title: { type: Type.STRING, description: "Título curto do compromisso (máx 30 caracteres)" },
+            date: { type: Type.STRING, description: "Data no formato DD/MM/AAAA, se houver" },
+            time: { type: Type.STRING, description: "Horário no formato HH:MM, se houver" },
+            location: { type: Type.STRING, description: "Local ou cidade, se houver" },
+            summary: { type: Type.STRING, description: "Resumo de uma linha" },
+          },
+        },
+      },
+    });
+
+    const result = JSON.parse(response.text || '{}');
+    return result;
+  } catch (error) {
+    console.error('Error analyzing for schedule:', error);
+    return { isSchedule: false };
+  }
+}
+
 export async function generateItemMetadata(content: string, type: 'note' | 'photo' | 'location' | 'schedule') {
   try {
     let prompt = '';
@@ -49,7 +84,6 @@ Agendamento: "${content}"`;
         responseSchema: {
           type: Type.OBJECT,
           properties: schemaProperties,
-          required: ['title', 'summary'],
         },
       },
     });

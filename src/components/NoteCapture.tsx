@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import { saveItem } from '../db';
 import { GoogleGenAI, LiveServerMessage, Modality } from '@google/genai';
 import { getAI } from '../utils/ai';
-import { generateItemMetadata } from '../utils/aiMetadata';
+import { generateItemMetadata, analyzeForSchedule } from '../utils/aiMetadata';
 import { AudioVisualizer } from './AudioVisualizer';
 
 interface NoteCaptureProps {
@@ -21,6 +21,8 @@ export function NoteCapture({ inputMode, onSaved, onCancel }: NoteCaptureProps) 
   const [statusText, setStatusText] = useState('Toque para iniciar');
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [scheduleSuggestion, setScheduleSuggestion] = useState<any>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
   
   const sessionRef = useRef<any>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -149,27 +151,63 @@ export function NoteCapture({ inputMode, onSaved, onCancel }: NoteCaptureProps) 
 
   const handleSave = async () => {
     if (!note.trim()) return;
-    setIsSaving(true);
+    setIsAnalyzing(true);
     try {
-      const metadata = await generateItemMetadata(note, 'note');
+      const scheduleData = await analyzeForSchedule(note);
+      if (scheduleData && scheduleData.isSchedule) {
+        setScheduleSuggestion(scheduleData);
+        setIsAnalyzing(false);
+        return; // Wait for user confirmation
+      }
       
-      await saveItem({
-        id: Date.now().toString(),
-        type: 'text',
-        content: note,
-        timestamp: Date.now(),
-        metadata: {
-          type: 'note',
-          title: metadata?.title || 'Nota sem título',
-          summary: metadata?.summary || ''
-        }
-      });
+      // If not a schedule, proceed with normal save
+      await proceedSaving('note');
+    } catch (error) {
+      console.error('Error analyzing note:', error);
+      await proceedSaving('note'); // Fallback to normal save
+    }
+  };
+
+  const proceedSaving = async (type: 'note' | 'schedule', scheduleData?: any) => {
+    setIsSaving(true);
+    setScheduleSuggestion(null);
+    try {
+      if (type === 'schedule' && scheduleData) {
+        await saveItem({
+          id: Date.now().toString(),
+          type: 'schedule',
+          content: note,
+          timestamp: Date.now(),
+          metadata: {
+            type: 'schedule',
+            title: scheduleData.title || 'Compromisso sem título',
+            date: scheduleData.date || '',
+            time: scheduleData.time || '',
+            location: scheduleData.location || '',
+            summary: scheduleData.summary || ''
+          }
+        });
+      } else {
+        const metadata = await generateItemMetadata(note, 'note');
+        
+        await saveItem({
+          id: Date.now().toString(),
+          type: 'text',
+          content: note,
+          timestamp: Date.now(),
+          metadata: {
+            type: 'note',
+            title: metadata?.title || 'Nota sem título',
+            summary: metadata?.summary || ''
+          }
+        });
+      }
       setIsSuccess(true);
       setTimeout(() => {
         onSaved();
       }, 1500);
     } catch (error) {
-      console.error('Error saving note:', error);
+      console.error('Error saving item:', error);
       setIsSaving(false);
     }
   };
@@ -232,14 +270,52 @@ export function NoteCapture({ inputMode, onSaved, onCancel }: NoteCaptureProps) 
 
         <button
           onClick={handleSave}
-          disabled={!note.trim() || isSaving || isSuccess}
+          disabled={!note.trim() || isSaving || isAnalyzing || isSuccess}
           className={`w-full font-medium py-3 px-4 rounded-xl transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed ${
             isSuccess ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white'
           }`}
         >
-          {isSaving ? <Loader2 className="animate-spin" size={20} /> : isSuccess ? <CheckCircle2 size={20} /> : <Save size={20} />}
-          {isSuccess ? 'Salvo com sucesso!' : 'Salvar'}
+          {(isSaving || isAnalyzing) ? <Loader2 className="animate-spin" size={20} /> : isSuccess ? <CheckCircle2 size={20} /> : <Save size={20} />}
+          {isSuccess ? 'Salvo com sucesso!' : isAnalyzing ? 'Analisando...' : 'Salvar'}
         </button>
+
+        {/* Schedule Suggestion Modal */}
+        {scheduleSuggestion && (
+          <div className="absolute inset-0 bg-slate-900/90 rounded-2xl flex flex-col items-center justify-center p-6 z-50 backdrop-blur-sm">
+            <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 shadow-2xl w-full max-w-sm text-center">
+              <div className="w-12 h-12 bg-blue-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                <CheckCircle2 className="text-blue-500" size={24} />
+              </div>
+              <h3 className="text-xl font-bold text-white mb-2">Agendamento Identificado!</h3>
+              <p className="text-slate-300 text-sm mb-4">
+                Parece que você anotou um compromisso. Deseja salvar na sua agenda?
+              </p>
+              <div className="bg-slate-900 rounded-lg p-3 text-left mb-6 border border-slate-700">
+                <p className="text-white font-medium">{scheduleSuggestion.title}</p>
+                <p className="text-slate-400 text-sm mt-1">
+                  {scheduleSuggestion.date} {scheduleSuggestion.time ? `às ${scheduleSuggestion.time}` : ''}
+                </p>
+                {scheduleSuggestion.location && (
+                  <p className="text-slate-400 text-sm mt-1">📍 {scheduleSuggestion.location}</p>
+                )}
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => proceedSaving('note')}
+                  className="flex-1 py-2 px-4 rounded-lg bg-slate-700 text-white hover:bg-slate-600 transition-colors text-sm font-medium"
+                >
+                  Não, salvar como nota
+                </button>
+                <button
+                  onClick={() => proceedSaving('schedule', scheduleSuggestion)}
+                  className="flex-1 py-2 px-4 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors text-sm font-medium"
+                >
+                  Sim, agendar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </motion.div>
   );

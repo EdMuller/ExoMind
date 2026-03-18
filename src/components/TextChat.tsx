@@ -20,7 +20,7 @@ export function TextChat() {
     try {
       const ai = getAI();
       chatRef.current = ai.chats.create({
-        model: 'gemini-3-flash-preview',
+        model: 'gemini-3.1-pro-preview',
         config: {
           systemInstruction: 'Você é o ExoMind, um assistente pessoal útil, conciso e amigável.',
         },
@@ -37,6 +37,10 @@ export function TextChat() {
 
   const handleSend = async () => {
     if (!input.trim() || isLoading) return;
+    if (!chatRef.current) {
+      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'model', text: 'O chat ainda não foi inicializado. Tente novamente em alguns segundos.' }]);
+      return;
+    }
 
     const userMsg = input.trim();
     setInput('');

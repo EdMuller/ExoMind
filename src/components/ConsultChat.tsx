@@ -121,10 +121,10 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
     try {
       const ai = getAI();
       const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
+        model: 'gemini-3.1-pro-preview',
         contents: userMsg,
         config: {
-          systemInstruction: dbContextText,
+          systemInstruction: dbContextText || 'Você é o ExoMind.',
         }
       });
 
