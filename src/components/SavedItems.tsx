@@ -323,6 +323,15 @@ export function SavedItems() {
                     {viewingItem.metadata?.description && (
                       <p className="text-white whitespace-pre-wrap">{viewingItem.metadata.description}</p>
                     )}
+                    {viewingItem.metadata?.linkedScheduleId && (
+                      <button
+                        onClick={() => handleOpenLinkedItem(viewingItem.metadata.linkedScheduleId)}
+                        className="w-full bg-slate-700 hover:bg-slate-600 text-white p-3 rounded-xl flex items-center justify-center gap-2 transition-colors text-sm"
+                      >
+                        <LinkIcon size={16} />
+                        Ver Agendamento Vinculado
+                      </button>
+                    )}
                   </div>
                 ) : getCategory(viewingItem) === 'location' ? (
                   <div className="space-y-4">
@@ -344,6 +353,15 @@ export function SavedItems() {
                     {viewingItem.metadata?.description && (
                       <p className="text-white whitespace-pre-wrap">{viewingItem.metadata.description}</p>
                     )}
+                    {viewingItem.metadata?.linkedScheduleId && (
+                      <button
+                        onClick={() => handleOpenLinkedItem(viewingItem.metadata.linkedScheduleId)}
+                        className="w-full bg-slate-700 hover:bg-slate-600 text-white p-3 rounded-xl flex items-center justify-center gap-2 transition-colors text-sm"
+                      >
+                        <LinkIcon size={16} />
+                        Ver Agendamento Vinculado
+                      </button>
+                    )}
                   </div>
                 ) : (
                   <div className="space-y-4">
@@ -360,6 +378,26 @@ export function SavedItems() {
                       >
                         <LinkIcon size={16} />
                         Ver Nota Original Vinculada
+                      </button>
+                    )}
+
+                    {viewingItem.metadata?.linkedPhotoId && (
+                      <button
+                        onClick={() => handleOpenLinkedItem(viewingItem.metadata.linkedPhotoId)}
+                        className="w-full bg-slate-700 hover:bg-slate-600 text-white p-3 rounded-xl flex items-center justify-center gap-2 transition-colors text-sm"
+                      >
+                        <LinkIcon size={16} />
+                        Ver Foto Original Vinculada
+                      </button>
+                    )}
+
+                    {viewingItem.metadata?.linkedLocationId && (
+                      <button
+                        onClick={() => handleOpenLinkedItem(viewingItem.metadata.linkedLocationId)}
+                        className="w-full bg-slate-700 hover:bg-slate-600 text-white p-3 rounded-xl flex items-center justify-center gap-2 transition-colors text-sm"
+                      >
+                        <LinkIcon size={16} />
+                        Ver Local Original Vinculado
                       </button>
                     )}
                     
