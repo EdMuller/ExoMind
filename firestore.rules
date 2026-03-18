@@ -20,7 +20,7 @@ service cloud.firestore {
     // Document ID: {itemId}
     // Fields:
     //   - id: string (required, immutable) - Item ID
-    //   - type: string (required) - 'text', 'audio', or 'video'
+    //   - type: string (required) - 'text', 'audio', 'video', 'photo', 'location', or 'schedule'
     //   - content: string (required) - Content or base64 data
     //   - summary: string (optional) - AI generated summary
     //   - createdAt: timestamp (required, immutable) - Creation time
@@ -75,7 +75,7 @@ service cloud.firestore {
     function isValidItem(data) {
       return hasRequiredFields(['id', 'type', 'content', 'createdAt']) &&
              data.id is string && data.id.size() > 0 && data.id.size() < 100 &&
-             data.type in ['text', 'audio', 'video', 'photo', 'location'] &&
+             data.type in ['text', 'audio', 'video', 'photo', 'location', 'schedule'] &&
              data.content is string && data.content.size() < 5000000 && // 5MB limit
              (!('summary' in data) || (data.summary is string && data.summary.size() < 10000)) &&
              (!('metadata' in data) || data.metadata is map || data.metadata == null) &&

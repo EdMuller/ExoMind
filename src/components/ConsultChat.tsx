@@ -121,7 +121,7 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
     try {
       const ai = getAI();
       const response = await ai.models.generateContent({
-        model: 'gemini-3.1-pro-preview',
+        model: 'gemini-3-flash-preview',
         contents: userMsg,
         config: {
           systemInstruction: dbContextText || 'Você é o ExoMind.',
@@ -143,12 +143,12 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
       if (selectedVoice === 'uHxni9EgaoUr7MGw3Der') {
         await incrementCacaVoiceUses();
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error generating response:', error);
       setMessages(prev => [...prev, { 
         id: Date.now().toString(), 
         role: 'model', 
-        content: 'Ocorreu um erro ao processar sua solicitação.' 
+        content: error?.message || 'Ocorreu um erro ao processar sua solicitação.' 
       }]);
       playTTS('Ocorreu um erro ao processar sua solicitação.', selectedVoice === 'uHxni9EgaoUr7MGw3Der' ? 'Zephyr' : selectedVoice);
     } finally {

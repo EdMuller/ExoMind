@@ -3,7 +3,7 @@ import { collection, doc, setDoc, getDocs, query, orderBy, writeBatch, Timestamp
 
 export interface ExoItem {
   id: string;
-  type: 'text' | 'photo' | 'location';
+  type: 'text' | 'photo' | 'location' | 'schedule';
   content: string; // text content, base64 photo, or location string
   metadata?: any;
   timestamp: number;

@@ -20,7 +20,7 @@ export function TextChat() {
     try {
       const ai = getAI();
       chatRef.current = ai.chats.create({
-        model: 'gemini-3.1-pro-preview',
+        model: 'gemini-3-flash-preview',
         config: {
           systemInstruction: 'Você é o ExoMind, um assistente pessoal útil, conciso e amigável.',
         },
@@ -50,9 +50,9 @@ export function TextChat() {
     try {
       const response = await chatRef.current.sendMessage({ message: userMsg });
       setMessages(prev => [...prev, { id: Date.now().toString(), role: 'model', text: response.text }]);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error sending message:', error);
-      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'model', text: 'Desculpe, ocorreu um erro ao processar sua mensagem.' }]);
+      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'model', text: error?.message || 'Desculpe, ocorreu um erro ao processar sua mensagem.' }]);
     } finally {
       setIsLoading(false);
     }

@@ -173,8 +173,12 @@ export function NoteCapture({ inputMode, onSaved, onCancel }: NoteCaptureProps) 
     setScheduleSuggestion(null);
     try {
       if (type === 'schedule' && scheduleData) {
+        const scheduleId = Date.now().toString();
+        const noteId = (Date.now() + 1).toString();
+        
+        // Save the schedule
         await saveItem({
-          id: Date.now().toString(),
+          id: scheduleId,
           type: 'schedule',
           content: note,
           timestamp: Date.now(),
@@ -184,7 +188,23 @@ export function NoteCapture({ inputMode, onSaved, onCancel }: NoteCaptureProps) 
             date: scheduleData.date || '',
             time: scheduleData.time || '',
             location: scheduleData.location || '',
-            summary: scheduleData.summary || ''
+            summary: scheduleData.summary || '',
+            linkedNoteId: noteId
+          }
+        });
+
+        // Also save the original note
+        const noteMetadata = await generateItemMetadata(note, 'note');
+        await saveItem({
+          id: noteId,
+          type: 'text',
+          content: note,
+          timestamp: Date.now() + 1,
+          metadata: {
+            type: 'note',
+            title: noteMetadata?.title || 'Nota sem título',
+            summary: noteMetadata?.summary || '',
+            linkedScheduleId: scheduleId
           }
         });
       } else {

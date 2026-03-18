@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Camera, MapPin, FileText, Loader2, Trash2, Calendar, Folder, ArrowLeft, ArrowDownAZ, ArrowUpAZ, CalendarDays, Share2, Maximize2, X } from 'lucide-react';
+import { Camera, MapPin, FileText, Loader2, Trash2, Calendar, Folder, ArrowLeft, ArrowDownAZ, ArrowUpAZ, CalendarDays, Share2, Maximize2, X, Link as LinkIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getItems, deleteItem } from '../db';
 
@@ -51,7 +51,7 @@ export function SavedItems() {
   const getCategory = (item: any): NonNullable<ItemCategory> => {
     if (item.type === 'photo') return 'photo';
     if (item.type === 'location') return 'location';
-    if (item.type === 'text' && item.metadata?.type === 'schedule') return 'schedule';
+    if (item.type === 'schedule' || (item.type === 'text' && item.metadata?.type === 'schedule')) return 'schedule';
     return 'note';
   };
 
@@ -132,6 +132,15 @@ export function SavedItems() {
       }
     } catch (error) {
       console.error('Erro ao compartilhar:', error);
+    }
+  };
+
+  const handleOpenLinkedItem = (linkedId: string) => {
+    const linkedItem = items.find(i => i.id === linkedId);
+    if (linkedItem) {
+      setViewingItem(linkedItem);
+    } else {
+      alert('O item vinculado não foi encontrado ou foi excluído.');
     }
   };
 
@@ -332,10 +341,32 @@ export function SavedItems() {
                     )}
                   </div>
                 ) : (
-                  <div className="bg-slate-900 p-4 rounded-xl border border-slate-700">
-                    <p className="text-white whitespace-pre-wrap text-sm leading-relaxed">
-                      {viewingItem.content}
-                    </p>
+                  <div className="space-y-4">
+                    <div className="bg-slate-900 p-4 rounded-xl border border-slate-700">
+                      <p className="text-white whitespace-pre-wrap text-sm leading-relaxed">
+                        {viewingItem.content}
+                      </p>
+                    </div>
+                    
+                    {viewingItem.metadata?.linkedNoteId && (
+                      <button
+                        onClick={() => handleOpenLinkedItem(viewingItem.metadata.linkedNoteId)}
+                        className="w-full bg-slate-700 hover:bg-slate-600 text-white p-3 rounded-xl flex items-center justify-center gap-2 transition-colors text-sm"
+                      >
+                        <LinkIcon size={16} />
+                        Ver Nota Original Vinculada
+                      </button>
+                    )}
+                    
+                    {viewingItem.metadata?.linkedScheduleId && (
+                      <button
+                        onClick={() => handleOpenLinkedItem(viewingItem.metadata.linkedScheduleId)}
+                        className="w-full bg-slate-700 hover:bg-slate-600 text-white p-3 rounded-xl flex items-center justify-center gap-2 transition-colors text-sm"
+                      >
+                        <LinkIcon size={16} />
+                        Ver Agendamento Vinculado
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
