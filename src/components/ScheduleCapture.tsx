@@ -35,8 +35,8 @@ export function ScheduleCapture({ inputMode, onSaved, onCancel }: ScheduleCaptur
           time: metadata?.time || time, 
           type: 'schedule',
           title: metadata?.title || title,
-          summary: metadata?.summary,
-          location: metadata?.location
+          summary: metadata?.summary || '',
+          location: metadata?.location || ''
         },
         timestamp: Date.now(),
       });

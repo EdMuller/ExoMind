@@ -14,11 +14,14 @@ export async function saveItem(item: ExoItem) {
   if (!user) throw new Error('User not authenticated');
   
   const itemRef = doc(db, 'users', user.uid, 'items', item.id);
+  // Clean undefined values from metadata
+  const cleanMetadata = item.metadata ? JSON.parse(JSON.stringify(item.metadata)) : null;
+
   await setDoc(itemRef, {
     id: item.id,
     type: item.type,
     content: item.content,
-    metadata: item.metadata || null,
+    metadata: cleanMetadata,
     timestamp: item.timestamp,
     createdAt: Timestamp.fromMillis(item.timestamp)
   });
@@ -50,11 +53,14 @@ export async function importItems(items: ExoItem[]) {
   const batch = writeBatch(db);
   for (const item of items) {
     const itemRef = doc(db, 'users', user.uid, 'items', item.id);
+    // Clean undefined values from metadata
+    const cleanMetadata = item.metadata ? JSON.parse(JSON.stringify(item.metadata)) : null;
+
     batch.set(itemRef, {
       id: item.id,
       type: item.type,
       content: item.content,
-      metadata: item.metadata || null,
+      metadata: cleanMetadata,
       timestamp: item.timestamp,
       createdAt: Timestamp.fromMillis(item.timestamp)
     });

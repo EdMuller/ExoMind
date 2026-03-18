@@ -245,7 +245,7 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
               const audioCtx = getAudioContext();
               
               if (audioCtx.state === 'suspended') {
-                await audioCtx.resume();
+                audioCtx.resume().catch(console.error);
               }
               
               try {

@@ -60,12 +60,15 @@ export function VipModal({ isOpen, onClose }: VipModalProps) {
             
             <h2 className="text-2xl font-bold text-white mb-2 flex items-center gap-2">
               <Star className="text-amber-400" size={24} fill="currentColor" />
-              Recursos VIP
+              Parabéns !
               <Star className="text-amber-400" size={24} fill="currentColor" />
             </h2>
             
+            <p className="text-slate-300 mb-2">
+              Você foi convidado a acessar recursos exclusivos do ExoMind !
+            </p>
             <p className="text-slate-300 mb-8">
-              Você foi convidado a acessar recursos exclusivos do ExoMind! Insira seu código de acesso abaixo para desbloquear.
+              Insira abaixo, seu código de acesso para desbloquear:
             </p>
 
             {status === 'success' ? (

@@ -60,8 +60,8 @@ export function LocationCapture({ onSaved, onCancel }: Props) {
         content: JSON.stringify(location),
         metadata: { 
           description: description.trim(),
-          title: metadata?.title,
-          summary: metadata?.summary
+          title: metadata?.title || 'Localização sem título',
+          summary: metadata?.summary || ''
         },
         timestamp: Date.now(),
       });

@@ -6,6 +6,7 @@ import tailwindcss from '@tailwindcss/vite';
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
     const apiKey = env.GEMINI_API_KEY || process.env.GEMINI_API_KEY || "";
+    const elevenLabsKey = env.ELEVENLABS_SECRET_KEY || process.env.ELEVENLABS_SECRET_KEY || "";
     
     return {
       server: {
@@ -15,7 +16,8 @@ export default defineConfig(({ mode }) => {
       plugins: [react(), tailwindcss()],
       define: {
         'process.env.API_KEY': JSON.stringify(apiKey),
-        'process.env.GEMINI_API_KEY': JSON.stringify(apiKey)
+        'process.env.GEMINI_API_KEY': JSON.stringify(apiKey),
+        'process.env.ELEVENLABS_SECRET_KEY': JSON.stringify(elevenLabsKey)
       },
       resolve: {
         alias: {

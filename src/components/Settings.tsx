@@ -3,6 +3,7 @@ import { Settings as SettingsIcon, Download, Upload, Cloud, Bell, Save, CheckCir
 import { motion } from 'framer-motion';
 import { QRCodeSVG } from 'qrcode.react';
 import { getAI } from '../utils/ai';
+import { Modality } from '@google/genai';
 import { getItems, importItems } from '../db';
 import { initAudio, getAudioContext } from '../utils/tts';
 import { useAuth } from '../AuthContext';
@@ -149,14 +150,23 @@ export function Settings({ onClose }: SettingsProps) {
     initAudio();
     try {
       if (selectedVoice === 'uHxni9EgaoUr7MGw3Der') {
-        const response = await fetch('/api/tts', {
+        const apiKey = process.env.ELEVENLABS_SECRET_KEY;
+        if (!apiKey) {
+          throw new Error('ElevenLabs API Key not configured');
+        }
+        const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${selectedVoice}`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            'xi-api-key': apiKey
           },
           body: JSON.stringify({
             text: "Parabéns, Você está conhecendo seu mais recente e mais completo assistente diário para todos os assuntos.",
-            voiceId: selectedVoice
+            model_id: 'eleven_multilingual_v2',
+            voice_settings: {
+              stability: 0.5,
+              similarity_boost: 0.75
+            }
           })
         });
 
@@ -183,7 +193,7 @@ export function Settings({ onClose }: SettingsProps) {
           model: "gemini-2.5-flash-preview-tts",
           contents: [{ parts: [{ text: "Parabéns, Você está conhecendo seu mais recente e mais completo assistente diário para todos os assuntos." }] }],
           config: {
-            responseModalities: ['AUDIO'],
+            responseModalities: [Modality.AUDIO],
             speechConfig: {
               voiceConfig: {
                 prebuiltVoiceConfig: { voiceName: selectedVoice },
@@ -229,7 +239,7 @@ export function Settings({ onClose }: SettingsProps) {
           }
 
           if (audioCtx.state === 'suspended') {
-            await audioCtx.resume();
+            audioCtx.resume().catch(console.error);
           }
 
           const source = audioCtx.createBufferSource();

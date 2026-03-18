@@ -46,14 +46,23 @@ export async function playTTS(text: string, voiceId: string): Promise<void> {
   return new Promise(async (resolve, reject) => {
     try {
       if (voiceId === 'uHxni9EgaoUr7MGw3Der') {
-        const response = await fetch('/api/tts', {
+        const apiKey = process.env.ELEVENLABS_SECRET_KEY;
+        if (!apiKey) {
+          throw new Error('ElevenLabs API Key not configured');
+        }
+        const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            'xi-api-key': apiKey
           },
           body: JSON.stringify({
             text: text,
-            voiceId: voiceId
+            model_id: 'eleven_multilingual_v2',
+            voice_settings: {
+              stability: 0.5,
+              similarity_boost: 0.75
+            }
           })
         });
 
@@ -131,7 +140,7 @@ export async function playTTS(text: string, voiceId: string): Promise<void> {
           }
 
           if (audioCtx.state === 'suspended') {
-            await audioCtx.resume();
+            audioCtx.resume().catch(console.error);
           }
 
           const source = audioCtx.createBufferSource();

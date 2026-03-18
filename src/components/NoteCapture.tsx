@@ -160,8 +160,8 @@ export function NoteCapture({ inputMode, onSaved, onCancel }: NoteCaptureProps) 
         timestamp: Date.now(),
         metadata: {
           type: 'note',
-          title: metadata?.title,
-          summary: metadata?.summary
+          title: metadata?.title || 'Nota sem título',
+          summary: metadata?.summary || ''
         }
       });
       setIsSuccess(true);

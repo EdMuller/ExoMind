@@ -68,8 +68,8 @@ export function DocumentCapture({ onSaved, onCancel }: Props) {
         content: photo,
         metadata: { 
           description: description.trim(),
-          title: metadata?.title,
-          summary: metadata?.summary
+          title: metadata?.title || 'Documento sem título',
+          summary: metadata?.summary || ''
         },
         timestamp: Date.now(),
       });
