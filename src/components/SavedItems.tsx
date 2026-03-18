@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Camera, MapPin, FileText, Loader2, Trash2, Calendar, Folder, ArrowLeft, ArrowDownAZ, ArrowUpAZ, CalendarDays, Share2, Maximize2, X, Link as LinkIcon } from 'lucide-react';
+import { Camera, MapPin, FileText, Loader2, Trash2, Calendar, Folder, ArrowLeft, ArrowDownAZ, ArrowUpAZ, CalendarDays, Share2, Maximize2, X, Link as LinkIcon, CalendarPlus } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getItems, deleteItem } from '../db';
+import { generateICS } from '../utils/calendar';
 
 type ItemCategory = 'note' | 'photo' | 'location' | 'schedule' | null;
 type SortOption = 'date_desc' | 'date_asc' | 'name_asc' | 'name_desc';
@@ -142,6 +143,10 @@ export function SavedItems() {
     } else {
       alert('O item vinculado não foi encontrado ou foi excluído.');
     }
+  };
+
+  const handleAddToCalendar = (item: any) => {
+    generateICS(item.metadata || {});
   };
 
   const counts = getCounts();
@@ -372,6 +377,15 @@ export function SavedItems() {
               </div>
               
               <div className="p-4 border-t border-slate-700 flex gap-3">
+                {getCategory(viewingItem) === 'schedule' && (
+                  <button
+                    onClick={() => handleAddToCalendar(viewingItem)}
+                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-3 px-4 rounded-xl transition-colors flex items-center justify-center gap-2"
+                  >
+                    <CalendarPlus size={20} />
+                    Adicionar à Agenda
+                  </button>
+                )}
                 <button
                   onClick={() => handleShare(viewingItem)}
                   className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-4 rounded-xl transition-colors flex items-center justify-center gap-2"

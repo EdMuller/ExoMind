@@ -3,6 +3,7 @@ import { Calendar, Save, X, Loader2, CheckCircle2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { saveItem } from '../db';
 import { generateItemMetadata } from '../utils/aiMetadata';
+import { generateICS } from '../utils/calendar';
 
 interface ScheduleCaptureProps {
   inputMode: 'text' | 'voice';
@@ -25,21 +26,26 @@ export function ScheduleCapture({ inputMode, onSaved, onCancel }: ScheduleCaptur
       const fullText = `Título: ${title}. Data: ${date}. Hora: ${time}. Notas: ${description}`;
       const metadata = await generateItemMetadata(fullText, 'schedule');
 
+      const scheduleMetadata = { 
+        description: title, 
+        date: metadata?.date || date, 
+        time: metadata?.time || time, 
+        type: 'schedule',
+        title: metadata?.title || title,
+        summary: metadata?.summary || '',
+        location: metadata?.location || ''
+      };
+
       await saveItem({
         id: Date.now().toString(),
-        type: 'text', // Saving as text for now, could be a specific 'schedule' type
+        type: 'schedule',
         content: `Agendamento: ${title} em ${date} às ${time}\n${description}`,
-        metadata: { 
-          description: title, 
-          date: metadata?.date || date, 
-          time: metadata?.time || time, 
-          type: 'schedule',
-          title: metadata?.title || title,
-          summary: metadata?.summary || '',
-          location: metadata?.location || ''
-        },
+        metadata: scheduleMetadata,
         timestamp: Date.now(),
       });
+      
+      generateICS(scheduleMetadata);
+      
       setIsSuccess(true);
       setTimeout(() => {
         onSaved();

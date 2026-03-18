@@ -5,6 +5,7 @@ import { saveItem } from '../db';
 import { GoogleGenAI, LiveServerMessage, Modality } from '@google/genai';
 import { getAI } from '../utils/ai';
 import { generateItemMetadata, analyzeForSchedule } from '../utils/aiMetadata';
+import { generateICS } from '../utils/calendar';
 import { AudioVisualizer } from './AudioVisualizer';
 
 interface NoteCaptureProps {
@@ -207,6 +208,9 @@ export function NoteCapture({ inputMode, onSaved, onCancel }: NoteCaptureProps) 
             linkedScheduleId: scheduleId
           }
         });
+
+        // Automatically trigger calendar download
+        generateICS(scheduleData);
       } else {
         const metadata = await generateItemMetadata(note, 'note');
         
