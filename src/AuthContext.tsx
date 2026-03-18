@@ -45,8 +45,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const signIn = async () => {
-    const provider = new GoogleAuthProvider();
-    await signInWithPopup(auth, provider);
+    try {
+      const provider = new GoogleAuthProvider();
+      await signInWithPopup(auth, provider);
+    } catch (error: any) {
+      console.error("Error signing in:", error);
+      if (error.code === 'auth/unauthorized-domain') {
+        alert("Erro: O domínio atual não está autorizado no Firebase.\n\nPara consertar isso:\n1. Vá no Console do Firebase (Authentication > Settings > Authorized domains)\n2. Adicione o domínio deste site à lista.");
+      } else {
+        alert("Erro ao fazer login: " + error.message);
+      }
+    }
   };
 
   const logOut = async () => {
