@@ -227,7 +227,7 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
 
               sessionPromise.then((session) => {
                 session.sendRealtimeInput({
-                  media: { data: base64Data, mimeType: 'audio/pcm;rate=16000' },
+                  audio: { data: base64Data, mimeType: 'audio/pcm;rate=16000' },
                 });
               });
             };
@@ -343,10 +343,13 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
   };
 
   useEffect(() => {
+    if (inputMode === 'voice') {
+      startVoiceSession();
+    }
     return () => {
       stopVoiceSession();
     };
-  }, []);
+  }, [inputMode]);
 
   return (
     <motion.div

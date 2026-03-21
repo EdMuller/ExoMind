@@ -85,7 +85,7 @@ export function NoteCapture({ inputMode, onSaved, onCancel }: NoteCaptureProps) 
 
               sessionPromise.then((session) => {
                 session.sendRealtimeInput({
-                  media: { data: base64Data, mimeType: 'audio/pcm;rate=16000' },
+                  audio: { data: base64Data, mimeType: 'audio/pcm;rate=16000' },
                 });
               });
             };
@@ -145,10 +145,13 @@ export function NoteCapture({ inputMode, onSaved, onCancel }: NoteCaptureProps) 
   };
 
   useEffect(() => {
+    if (inputMode === 'voice') {
+      startSession();
+    }
     return () => {
       stopSession();
     };
-  }, []);
+  }, [inputMode]);
 
   const handleSave = async () => {
     if (!note.trim()) return;

@@ -235,7 +235,11 @@ export default function App() {
             <LocationCapture onSaved={handleSaved} onCancel={handleBack} />
           )}
 
-          {view === 'action_execute' && action === 'agendar' && inputMode && (
+          {view === 'action_execute' && action === 'agendar' && inputMode === 'voice' && (
+            <NoteCapture inputMode={inputMode} onSaved={handleSaved} onCancel={handleBack} />
+          )}
+
+          {view === 'action_execute' && action === 'agendar' && inputMode === 'text' && (
             <ScheduleCapture inputMode={inputMode} onSaved={handleSaved} onCancel={handleBack} />
           )}
 
