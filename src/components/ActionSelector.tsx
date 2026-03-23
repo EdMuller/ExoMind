@@ -86,11 +86,12 @@ export function ActionSelector({ inputMode, onSelectAction }: ActionSelectorProp
     setIsSpeaking(true);
     try {
       let selectedVoice = localStorage.getItem('exo_voice_preference') || 'Zephyr';
+      const voiceRate = parseFloat(localStorage.getItem('exo_voice_rate') || '1.0');
       if (selectedVoice === 'uHxni9EgaoUr7MGw3Der' && cacaVoiceUses >= 5) {
         selectedVoice = 'Zephyr'; // Fallback if limit reached
       }
       
-      await playTTS('O que você deseja fazer? Comentar, Fotografar, Salvar Local, Agendar ou Consultar?', selectedVoice);
+      await playTTS('O que você deseja fazer? Comentar, Fotografar, Salvar Local, Agendar ou Consultar?', selectedVoice, voiceRate);
       if (selectedVoice === 'uHxni9EgaoUr7MGw3Der') {
         await incrementCacaVoiceUses();
       }

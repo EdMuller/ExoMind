@@ -11,44 +11,89 @@ interface AuthContextType {
   cacaVoiceUses: number;
   incrementCacaVoiceUses: () => Promise<void>;
   isVip: boolean;
+  plan: 'Bronze' | 'Prata' | 'Ouro' | 'Diamante';
   unlockVip: (code: string) => Promise<boolean>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
+
+const APP_VERSION = '1.0.9';
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [cacaVoiceUses, setCacaVoiceUses] = useState(0);
   const [isVip, setIsVip] = useState(false);
+  const [plan, setPlan] = useState<'Bronze' | 'Prata' | 'Ouro' | 'Diamante'>('Bronze');
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      setUser(currentUser);
-      if (currentUser) {
-        // Ensure user document exists
-        const userRef = doc(db, 'users', currentUser.uid);
-        const userSnap = await getDoc(userRef);
-        if (!userSnap.exists()) {
-          await setDoc(userRef, {
-            uid: currentUser.uid,
-            email: currentUser.email,
-            displayName: currentUser.displayName,
-            photoURL: currentUser.photoURL,
-            cacaVoiceUses: 0,
-            isVip: false
-          });
-          setCacaVoiceUses(0);
-          setIsVip(false);
-        } else {
-          const data = userSnap.data();
-          setCacaVoiceUses(data.cacaVoiceUses || 0);
-          setIsVip(data.isVip || false);
-        }
+    const checkVersionAndAuth = async () => {
+      const lastVersion = localStorage.getItem('app_version');
+      
+      if (lastVersion && lastVersion !== APP_VERSION) {
+        // Force logout on version change
+        await signOut(auth);
+        localStorage.setItem('app_version', APP_VERSION);
+        localStorage.setItem('caca_voice_reset_done', 'false');
+        // Clear session storage to force fresh state
+        sessionStorage.clear();
+        window.location.reload();
+        return;
       }
-      setLoading(false);
-    });
-    return unsubscribe;
+      
+      localStorage.setItem('app_version', APP_VERSION);
+
+      const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+        setUser(currentUser);
+        if (currentUser) {
+          const userRef = doc(db, 'users', currentUser.uid);
+          const userSnap = await getDoc(userRef);
+          
+          let userData: any;
+          if (!userSnap.exists()) {
+            userData = {
+              uid: currentUser.uid,
+              email: currentUser.email,
+              displayName: currentUser.displayName,
+              photoURL: currentUser.photoURL,
+              cacaVoiceUses: 0,
+              isVip: currentUser.email === 'empresarioholistico@gmail.com', // Auto-VIP for the user
+              plan: currentUser.email === 'empresarioholistico@gmail.com' ? 'Diamante' : 'Bronze'
+            };
+            await setDoc(userRef, userData);
+          } else {
+            userData = userSnap.data();
+            // Ensure the user is always VIP if they are the owner
+            if (currentUser.email === 'empresarioholistico@gmail.com' && (!userData.isVip || userData.plan !== 'Diamante')) {
+              userData.isVip = true;
+              userData.plan = 'Diamante';
+              await setDoc(userRef, { isVip: true, plan: 'Diamante' }, { merge: true });
+            }
+          }
+
+          // Development Reset Logic (requested by user)
+          if (localStorage.getItem('caca_voice_reset_done') !== 'true') {
+            userData.cacaVoiceUses = 0;
+            await setDoc(userRef, { cacaVoiceUses: 0 }, { merge: true });
+            localStorage.setItem('caca_voice_reset_done', 'true');
+          }
+
+          setCacaVoiceUses(userData.cacaVoiceUses || 0);
+          setIsVip(userData.isVip || false);
+          setPlan(userData.plan || 'Bronze');
+        }
+        setLoading(false);
+      });
+
+      return unsubscribe;
+    };
+
+    const authUnsubscribePromise = checkVersionAndAuth();
+    return () => {
+      authUnsubscribePromise.then(unsubscribe => {
+        if (typeof unsubscribe === 'function') unsubscribe();
+      });
+    };
   }, []);
 
   const signIn = async () => {
@@ -66,13 +111,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logOut = async () => {
+    sessionStorage.removeItem('birthdayShown');
     await signOut(auth);
   };
 
   const incrementCacaVoiceUses = async () => {
     if (!user || isVip) return; // VIPs have unlimited uses
     const newUses = cacaVoiceUses + 1;
-    if (newUses > 5) return;
+    if (newUses > 10) return;
     
     const userRef = doc(db, 'users', user.uid);
     await setDoc(userRef, { cacaVoiceUses: newUses }, { merge: true });
@@ -84,15 +130,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const normalizedCode = code.trim().toUpperCase();
     if (normalizedCode === 'CACÁ61' || normalizedCode === 'CACA61') {
       const userRef = doc(db, 'users', user.uid);
-      await setDoc(userRef, { isVip: true }, { merge: true });
+      await setDoc(userRef, { isVip: true, plan: 'Diamante' }, { merge: true });
       setIsVip(true);
+      setPlan('Diamante');
+      sessionStorage.setItem('justUnlockedVip', 'true');
+      window.dispatchEvent(new Event('vipUnlocked'));
       return true;
     }
     return false;
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, signIn, logOut, cacaVoiceUses, incrementCacaVoiceUses, isVip, unlockVip }}>
+    <AuthContext.Provider value={{ user, loading, signIn, logOut, cacaVoiceUses, incrementCacaVoiceUses, isVip, plan, unlockVip }}>
       {children}
     </AuthContext.Provider>
   );

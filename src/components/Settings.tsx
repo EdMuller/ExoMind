@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Settings as SettingsIcon, Download, Upload, Cloud, Bell, Save, CheckCircle2, AlertCircle, User, Image as ImageIcon, Video, Mic, Volume2, Loader2, LogOut, Share2, FileText, QrCode } from 'lucide-react';
+import { Settings as SettingsIcon, Download, Upload, Cloud, Bell, Save, CheckCircle2, AlertCircle, User, Image as ImageIcon, Video, Mic, Volume2, Loader2, LogOut, Share2, FileText, QrCode, X } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { QRCodeSVG } from 'qrcode.react';
 import { getAI } from '../utils/ai';
@@ -13,29 +13,44 @@ interface SettingsProps {
 }
 
 export function Settings({ onClose }: SettingsProps) {
-  const { user, logOut, cacaVoiceUses, incrementCacaVoiceUses } = useAuth();
+  const { user, logOut, cacaVoiceUses, incrementCacaVoiceUses, plan } = useAuth();
   const [appName, setAppName] = useState('ExoMind');
   const [userName, setUserName] = useState('');
+  const [customAiInstructions, setCustomAiInstructions] = useState('');
   const [appIcon, setAppIcon] = useState<string | null>(null);
   const [reminderEnabled, setReminderEnabled] = useState(false);
   const [backupMode, setBackupMode] = useState<'automatic' | 'manual'>('manual');
   const [backupInterval, setBackupInterval] = useState<number>(7);
   const [selectedVoice, setSelectedVoice] = useState('Zephyr');
+  const [voiceRate, setVoiceRate] = useState(1.0);
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [status, setStatus] = useState<{ type: 'success' | 'error' | null; message: string }>({ type: null, message: '' });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [isSuccess, setIsSuccess] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [exportFormat, setExportFormat] = useState<'json' | 'txt' | 'csv'>('txt');
+  const [exportItems, setExportItems] = useState<string[]>([]); // IDs of items to export
+  const [isExporting, setIsExporting] = useState(false);
+  const [availableItems, setAvailableItems] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (showExportModal) {
+      getItems().then(setAvailableItems);
+    }
+  }, [showExportModal]);
 
   useEffect(() => {
     // Load settings from localStorage
     setAppName(localStorage.getItem('appName') || 'ExoMind');
     setUserName(localStorage.getItem('userName') || '');
+    setCustomAiInstructions(localStorage.getItem('customAiInstructions') || '');
     setAppIcon(localStorage.getItem('appIcon') || null);
     setReminderEnabled(localStorage.getItem('backupReminderEnabled') === 'true');
     setBackupMode((localStorage.getItem('backupMode') as 'automatic' | 'manual') || 'manual');
     setBackupInterval(parseInt(localStorage.getItem('backupInterval') || '7', 10));
     setSelectedVoice(localStorage.getItem('exo_voice_preference') || 'Zephyr');
+    setVoiceRate(parseFloat(localStorage.getItem('exo_voice_rate') || '1.0'));
   }, []);
 
   const showStatus = (type: 'success' | 'error', message: string) => {
@@ -46,11 +61,13 @@ export function Settings({ onClose }: SettingsProps) {
   const handleSaveSettings = () => {
     localStorage.setItem('appName', appName);
     localStorage.setItem('userName', userName);
+    localStorage.setItem('customAiInstructions', customAiInstructions);
     if (appIcon) localStorage.setItem('appIcon', appIcon);
     localStorage.setItem('backupReminderEnabled', reminderEnabled.toString());
     localStorage.setItem('backupMode', backupMode);
     localStorage.setItem('backupInterval', backupInterval.toString());
     localStorage.setItem('exo_voice_preference', selectedVoice);
+    localStorage.setItem('exo_voice_rate', voiceRate.toString());
     window.dispatchEvent(new Event('settingsUpdated'));
     
     setIsSuccess(true);
@@ -61,19 +78,89 @@ export function Settings({ onClose }: SettingsProps) {
     }, 1500);
   };
 
-  const handleExport = async (format: 'json' | 'txt') => {
+  const downloadFile = (dataStr: string, mimeType: string, filename: string) => {
+    const dataBlob = new Blob([dataStr], { type: mimeType });
+    const url = URL.createObjectURL(dataBlob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleBackup = async () => {
     try {
       const items = await getItems();
+      const dateStr = new Date().toISOString().split('T')[0];
+      
+      // Native JSON backup (Always)
+      const jsonStr = JSON.stringify(items, null, 2);
+      downloadFile(jsonStr, 'application/json', `exomind-native-backup-${dateStr}.json`);
+
+      // If Ouro or Diamante, also export TXT and CSV automatically
+      if (plan === 'Ouro' || plan === 'Diamante') {
+        // TXT
+        const txtStr = items.map(i => {
+          const date = new Date(i.timestamp).toLocaleString('pt-BR');
+          return `Data: ${date}\nTipo: ${i.type.toUpperCase()}\nConteúdo:\n${i.content}\n----------------------------------------\n`;
+        }).join('\n');
+        downloadFile(txtStr, 'text/plain', `exomind-readable-backup-${dateStr}.txt`);
+
+        // CSV
+        const headers = ['ID', 'Data', 'Tipo', 'Conteúdo', 'Descrição'];
+        const rows = items.map(i => [
+          i.id,
+          new Date(i.timestamp).toISOString(),
+          i.type,
+          `"${(i.content || '').toString().replace(/"/g, '""')}"`,
+          `"${(i.metadata?.description || '').toString().replace(/"/g, '""')}"`
+        ]);
+        const csvStr = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+        downloadFile(csvStr, 'text/csv', `exomind-data-backup-${dateStr}.csv`);
+      }
+
+      localStorage.setItem('lastBackupDate', Date.now().toString());
+      showStatus('success', 'Backup realizado com sucesso!');
+    } catch (error) {
+      console.error('Error during backup:', error);
+      showStatus('error', 'Erro ao realizar backup.');
+    }
+  };
+
+  const handleExportCustom = async () => {
+    if (plan === 'Bronze' || plan === 'Prata') {
+      showStatus('error', 'A exportação personalizada é um recurso Ouro/Diamante. Faça um upgrade para garantir total portabilidade!');
+      return;
+    }
+    
+    try {
+      const allItems = await getItems();
+      const selectedItems = allItems.filter(i => exportItems.length === 0 || exportItems.includes(i.id));
+      
       let dataStr = '';
       let mimeType = '';
       let extension = '';
 
-      if (format === 'json') {
-        dataStr = JSON.stringify(items, null, 2);
+      if (exportFormat === 'json') {
+        dataStr = JSON.stringify(selectedItems, null, 2);
         mimeType = 'application/json';
         extension = 'json';
+      } else if (exportFormat === 'csv') {
+        const headers = ['ID', 'Data', 'Tipo', 'Conteúdo', 'Descrição'];
+        const rows = selectedItems.map(i => [
+          i.id,
+          new Date(i.timestamp).toISOString(),
+          i.type,
+          `"${(i.content || '').toString().replace(/"/g, '""')}"`,
+          `"${(i.metadata?.description || '').toString().replace(/"/g, '""')}"`
+        ]);
+        dataStr = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+        mimeType = 'text/csv';
+        extension = 'csv';
       } else {
-        dataStr = items.map(i => {
+        dataStr = selectedItems.map(i => {
           const date = new Date(i.timestamp).toLocaleString('pt-BR');
           return `Data: ${date}\nTipo: ${i.type.toUpperCase()}\nConteúdo:\n${i.content}\n----------------------------------------\n`;
         }).join('\n');
@@ -81,22 +168,11 @@ export function Settings({ onClose }: SettingsProps) {
         extension = 'txt';
       }
 
-      const dataBlob = new Blob([dataStr], { type: mimeType });
-      const url = URL.createObjectURL(dataBlob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `exomind-backup-${new Date().toISOString().split('T')[0]}.${extension}`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-      
-      if (format === 'json') {
-        localStorage.setItem('lastBackupDate', Date.now().toString());
-      }
-      showStatus('success', `Dados exportados com sucesso (.${extension})!`);
+      downloadFile(dataStr, mimeType, `exomind-export-${new Date().toISOString().split('T')[0]}.${extension}`);
+      showStatus('success', 'Exportação concluída!');
+      setShowExportModal(false);
     } catch (error) {
-      console.error('Error exporting backup:', error);
+      console.error('Error during custom export:', error);
       showStatus('error', 'Erro ao exportar dados.');
     }
   };
@@ -149,6 +225,7 @@ export function Settings({ onClose }: SettingsProps) {
     setIsPreviewing(true);
     initAudio();
     try {
+      const text = "Parabéns, Você está conhecendo seu mais recente e mais completo assistente diário para todos os assuntos.";
       if (selectedVoice === 'uHxni9EgaoUr7MGw3Der') {
         const apiKey = process.env.ELEVENLABS_SECRET_KEY;
         if (!apiKey) {
@@ -161,7 +238,7 @@ export function Settings({ onClose }: SettingsProps) {
             'xi-api-key': apiKey
           },
           body: JSON.stringify({
-            text: "Parabéns, Você está conhecendo seu mais recente e mais completo assistente diário para todos os assuntos.",
+            text: text,
             model_id: 'eleven_multilingual_v2',
             voice_settings: {
               stability: 0.5,
@@ -177,6 +254,7 @@ export function Settings({ onClose }: SettingsProps) {
         const audioBlob = await response.blob();
         const audioUrl = URL.createObjectURL(audioBlob);
         const audio = new Audio(audioUrl);
+        audio.playbackRate = voiceRate;
         
         audio.onended = () => {
           setIsPreviewing(false);
@@ -191,7 +269,7 @@ export function Settings({ onClose }: SettingsProps) {
         const ai = getAI();
         const response = await ai.models.generateContent({
           model: "gemini-2.5-flash-preview-tts",
-          contents: [{ parts: [{ text: "Parabéns, Você está conhecendo seu mais recente e mais completo assistente diário para todos os assuntos." }] }],
+          contents: [{ parts: [{ text: text }] }],
           config: {
             responseModalities: [Modality.AUDIO],
             speechConfig: {
@@ -244,6 +322,7 @@ export function Settings({ onClose }: SettingsProps) {
 
           const source = audioCtx.createBufferSource();
           source.buffer = audioBuffer;
+          source.playbackRate.value = voiceRate;
           source.connect(audioCtx.destination);
           source.start();
           source.onended = () => {
@@ -260,12 +339,19 @@ export function Settings({ onClose }: SettingsProps) {
     }
   };
 
+  const toggleItemSelection = (id: string) => {
+    setExportItems(prev => 
+      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    );
+  };
+
   return (
     <motion.div
+      key="settings"
       initial={{ opacity: 0, x: 20 }}
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: -20 }}
-      className="flex-1 flex flex-col h-full absolute inset-0 bg-slate-900 overflow-y-auto p-4"
+      className="flex-1 flex flex-col h-full absolute inset-0 bg-slate-900 overflow-y-auto p-4 z-20"
     >
       <div className="max-w-md mx-auto w-full pb-20">
         <div className="flex items-center gap-3 mb-8 mt-4">
@@ -338,6 +424,19 @@ export function Settings({ onClose }: SettingsProps) {
                 />
               </div>
               <div>
+                <label className="block text-sm font-medium text-slate-400 mb-1">Instruções Personalizadas da IA</label>
+                <textarea
+                  value={customAiInstructions}
+                  onChange={(e) => setCustomAiInstructions(e.target.value)}
+                  placeholder="Ex: Sempre me chame de 'Comandante'. Use respostas curtas e diretas. Se eu falar sobre trabalho, use um tom mais formal."
+                  rows={4}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none text-sm resize-none"
+                />
+                <p className="text-xs text-slate-500 mt-1">
+                  Essas instruções moldam como a IA interage com você.
+                </p>
+              </div>
+              <div>
                 <label className="block text-sm font-medium text-slate-400 mb-2">Ícone do Aplicativo</label>
                 <div className="flex items-center gap-4">
                   <div className="w-16 h-16 rounded-2xl bg-slate-900 border border-slate-700 flex items-center justify-center overflow-hidden shrink-0">
@@ -397,20 +496,41 @@ export function Settings({ onClose }: SettingsProps) {
                 )}
               </button>
             </div>
+
+            <div className="mt-6">
+              <label className="block text-sm font-medium text-slate-400 mb-2 flex justify-between">
+                <span>Velocidade da Voz</span>
+                <span className="text-emerald-400 font-mono">{voiceRate.toFixed(1)}x</span>
+              </label>
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-slate-500">0.5x</span>
+                <input
+                  type="range"
+                  min="0.5"
+                  max="2.0"
+                  step="0.1"
+                  value={voiceRate}
+                  onChange={(e) => setVoiceRate(parseFloat(e.target.value))}
+                  className="flex-1 h-2 bg-slate-900 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                />
+                <span className="text-xs text-slate-500">2.0x</span>
+              </div>
+            </div>
+
             {selectedVoice === 'uHxni9EgaoUr7MGw3Der' && (
               <div className="mt-4 p-4 bg-purple-500/10 border border-purple-500/20 rounded-xl">
                 <div className="flex justify-between items-center mb-2">
                   <span className="text-sm font-medium text-purple-300">Uso da Voz Premium (Cacá)</span>
-                  <span className="text-sm font-bold text-purple-400">{cacaVoiceUses} / 5</span>
+                  <span className="text-sm font-bold text-purple-400">{cacaVoiceUses} / 10</span>
                 </div>
                 <div className="w-full bg-slate-900 rounded-full h-2 overflow-hidden">
                   <div 
                     className="bg-purple-500 h-2 rounded-full transition-all" 
-                    style={{ width: `${(cacaVoiceUses / 5) * 100}%` }}
+                    style={{ width: `${(cacaVoiceUses / 10) * 100}%` }}
                   ></div>
                 </div>
                 <p className="text-xs text-slate-400 mt-2">
-                  A voz clonada é um recurso premium limitado a 5 interações na versão gratuita.
+                  A voz clonada é um recurso premium limitado a 10 interações na versão gratuita.
                 </p>
               </div>
             )}
@@ -492,40 +612,45 @@ export function Settings({ onClose }: SettingsProps) {
               </div>
 
               <div className="pt-4 border-t border-slate-700">
-                <p className="text-slate-400 text-sm mb-4">Exportar e Restaurar Dados</p>
-                <div className="grid grid-cols-3 gap-4">
+                <p className="text-slate-400 text-sm mb-4">Gerenciamento de Dados</p>
+                <div className="grid grid-cols-1 gap-3">
                   <button
-                    onClick={() => handleExport('json')}
-                    className="flex flex-col items-center justify-center p-4 bg-slate-900 border border-slate-700 hover:border-blue-500 rounded-xl transition-colors group"
-                    title="Exportar Backup (JSON)"
+                    onClick={handleBackup}
+                    className="flex items-center gap-4 p-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors shadow-lg shadow-blue-900/20"
                   >
-                    <Download size={24} className="text-slate-400 group-hover:text-blue-400 mb-2 transition-colors" />
-                    <span className="text-xs font-medium text-slate-300 group-hover:text-white transition-colors text-center">Backup (JSON)</span>
-                  </button>
-                  
-                  <button
-                    onClick={() => handleExport('txt')}
-                    className="flex flex-col items-center justify-center p-4 bg-slate-900 border border-slate-700 hover:border-emerald-500 rounded-xl transition-colors group"
-                    title="Exportar para Leitura (TXT)"
-                  >
-                    <FileText size={24} className="text-slate-400 group-hover:text-emerald-400 mb-2 transition-colors" />
-                    <span className="text-xs font-medium text-slate-300 group-hover:text-white transition-colors text-center">Ler (TXT)</span>
+                    <div className="w-10 h-10 rounded-lg bg-white/10 flex items-center justify-center">
+                      <Save size={20} />
+                    </div>
+                    <div className="text-left">
+                      <span className="block font-bold">Fazer Backup</span>
+                      <span className="text-xs text-blue-100 opacity-80">Salva seus dados para segurança</span>
+                    </div>
                   </button>
 
-                  <input
-                    type="file"
-                    accept=".json"
-                    className="hidden"
-                    ref={fileInputRef}
-                    onChange={handleImport}
-                  />
                   <button
                     onClick={() => fileInputRef.current?.click()}
-                    className="flex flex-col items-center justify-center p-4 bg-slate-900 border border-slate-700 hover:border-purple-500 rounded-xl transition-colors group"
-                    title="Restaurar Backup"
+                    className="flex items-center gap-4 p-4 bg-slate-900 border border-slate-700 hover:border-purple-500 text-white rounded-xl transition-colors"
                   >
-                    <Upload size={24} className="text-slate-400 group-hover:text-purple-400 mb-2 transition-colors" />
-                    <span className="text-xs font-medium text-slate-300 group-hover:text-white transition-colors text-center">Restaurar</span>
+                    <div className="w-10 h-10 rounded-lg bg-purple-500/10 flex items-center justify-center text-purple-400">
+                      <Upload size={20} />
+                    </div>
+                    <div className="text-left">
+                      <span className="block font-bold">Restaurar Dados</span>
+                      <span className="text-xs text-slate-400">Recupera um backup anterior</span>
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => setShowExportModal(true)}
+                    className="flex items-center gap-4 p-4 bg-slate-900 border border-slate-700 hover:border-emerald-500 text-white rounded-xl transition-colors"
+                  >
+                    <div className="w-10 h-10 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-400">
+                      <FileText size={20} />
+                    </div>
+                    <div className="text-left">
+                      <span className="block font-bold">Exportar Dados</span>
+                      <span className="text-xs text-slate-400">Escolha formatos e itens específicos</span>
+                    </div>
                   </button>
                 </div>
               </div>
@@ -588,6 +713,95 @@ export function Settings({ onClose }: SettingsProps) {
           </div>
         </div>
       </div>
+
+      {/* Export Modal */}
+      {showExportModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <motion.div 
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-slate-800 border border-slate-700 rounded-3xl w-full max-w-md overflow-hidden flex flex-col max-h-[80vh]"
+          >
+            <div className="p-6 border-b border-slate-700 flex justify-between items-center">
+              <h3 className="text-xl font-bold text-white">Exportar Dados</h3>
+              <button onClick={() => setShowExportModal(false)} className="text-slate-400 hover:text-white">
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto flex-1 space-y-6">
+              {/* Format Selection */}
+              <div>
+                <label className="block text-sm font-medium text-slate-400 mb-3">Formato do Arquivo</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {(['txt', 'csv', 'json'] as const).map((f) => (
+                    <button
+                      key={f}
+                      onClick={() => setExportFormat(f)}
+                      className={`py-2 px-4 rounded-lg border text-sm font-bold transition-all ${
+                        exportFormat === f 
+                          ? 'bg-emerald-500 border-emerald-400 text-white' 
+                          : 'bg-slate-900 border-slate-700 text-slate-400'
+                      }`}
+                    >
+                      {f.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Item Selection */}
+              <div>
+                <div className="flex justify-between items-center mb-3">
+                  <label className="block text-sm font-medium text-slate-400">Selecionar Itens</label>
+                  <button 
+                    onClick={() => setExportItems(exportItems.length === availableItems.length ? [] : availableItems.map(i => i.id))}
+                    className="text-xs text-emerald-400 font-medium"
+                  >
+                    {exportItems.length === availableItems.length ? 'Desmarcar Todos' : 'Selecionar Todos'}
+                  </button>
+                </div>
+                <div className="space-y-2 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
+                  {availableItems.map((item) => (
+                    <button
+                      key={item.id}
+                      onClick={() => toggleItemSelection(item.id)}
+                      className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-all text-left ${
+                        exportItems.includes(item.id)
+                          ? 'bg-emerald-500/10 border-emerald-500/50'
+                          : 'bg-slate-900 border-slate-700'
+                      }`}
+                    >
+                      <div className={`w-5 h-5 rounded border flex items-center justify-center shrink-0 ${
+                        exportItems.includes(item.id) ? 'bg-emerald-500 border-emerald-500' : 'border-slate-600'
+                      }`}>
+                        {exportItems.includes(item.id) && <CheckCircle2 size={14} className="text-white" />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-white truncate">
+                          {item.metadata?.description || item.content.substring(0, 30) || 'Sem título'}
+                        </p>
+                        <p className="text-[10px] text-slate-500">
+                          {new Date(item.timestamp).toLocaleDateString()} • {item.type}
+                        </p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6 bg-slate-900/50 border-t border-slate-700">
+              <button
+                onClick={handleExportCustom}
+                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl transition-colors shadow-lg shadow-emerald-900/20"
+              >
+                Baixar {exportItems.length || 'Todos os'} Itens
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
     </motion.div>
   );
 }

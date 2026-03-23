@@ -44,6 +44,7 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
       try {
         const appName = localStorage.getItem('appName') || 'ExoMind';
         const userName = localStorage.getItem('userName') || 'Usuário';
+        const customInstructions = localStorage.getItem('customAiInstructions') || '';
 
         const items = await getItems();
         setDbItems(items);
@@ -62,7 +63,7 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
           return `ID: ${item.id} | Data: [${date}] | Tipo: ${item.type} | Título/Descrição: ${item.metadata?.description || 'Sem descrição'} | Conteúdo: ${content}`;
         }).join('\n\n');
         
-        const baseInstruction = `Seu nome é ${appName}. O nome do usuário com quem você está falando é ${userName}. Aqui estão as memórias e anotações salvas pelo usuário:\n\n${contextString}\n\nResponda às perguntas do usuário com base nessas informações.`;
+        const baseInstruction = `Seu nome é ${appName}. O nome do usuário com quem você está falando é ${userName}. Aqui estão as memórias e anotações salvas pelo usuário:\n\n${contextString}\n\nResponda às perguntas do usuário com base nessas informações.\n\nINSTRUÇÕES ADICIONAIS DO USUÁRIO:\n${customInstructions}`;
         
         setDbContextText(`${baseInstruction} Se o usuário pedir para ver uma foto ou imagem, você DEVE incluir a tag <IMG:id_da_imagem> na sua resposta. Por exemplo: "Aqui está a foto: <IMG:123456789>".`);
         
@@ -111,12 +112,13 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
     setIsLoading(true);
     
     let selectedVoice = localStorage.getItem('exo_voice_preference') || 'Zephyr';
+    const voiceRate = parseFloat(localStorage.getItem('exo_voice_rate') || '1.0');
     if (selectedVoice === 'uHxni9EgaoUr7MGw3Der' && cacaVoiceUses >= 5) {
       selectedVoice = 'Zephyr'; // Fallback if limit reached
     }
     
     // Feedback de áudio suave (processando) - use Zephyr to save Cacá uses
-    playTTS("Processando sua pergunta...", selectedVoice === 'uHxni9EgaoUr7MGw3Der' ? 'Zephyr' : selectedVoice);
+    playTTS("Processando sua pergunta...", selectedVoice === 'uHxni9EgaoUr7MGw3Der' ? 'Zephyr' : selectedVoice, voiceRate);
 
     try {
       const ai = getAI();
@@ -139,7 +141,7 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
       }]);
       
       // Ler a resposta em voz alta
-      await playTTS(processed.text, selectedVoice);
+      await playTTS(processed.text, selectedVoice, voiceRate);
       if (selectedVoice === 'uHxni9EgaoUr7MGw3Der') {
         await incrementCacaVoiceUses();
       }
@@ -150,7 +152,7 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
         role: 'model', 
         content: error?.message || 'Ocorreu um erro ao processar sua solicitação.' 
       }]);
-      playTTS('Ocorreu um erro ao processar sua solicitação.', selectedVoice === 'uHxni9EgaoUr7MGw3Der' ? 'Zephyr' : selectedVoice);
+      playTTS('Ocorreu um erro ao processar sua solicitação.', selectedVoice === 'uHxni9EgaoUr7MGw3Der' ? 'Zephyr' : selectedVoice, voiceRate);
     } finally {
       setIsLoading(false);
     }

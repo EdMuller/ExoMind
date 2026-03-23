@@ -38,7 +38,7 @@ export function initAudio() {
   }
 }
 
-export async function playTTS(text: string, voiceId: string): Promise<void> {
+export async function playTTS(text: string, voiceId: string, rate: number = 1.0): Promise<void> {
   // Resume audio context synchronously if possible, or at least initiate it
   initAudio();
   const audioCtx = getAudioContext();
@@ -73,6 +73,7 @@ export async function playTTS(text: string, voiceId: string): Promise<void> {
         const audioBlob = await response.blob();
         const audioUrl = URL.createObjectURL(audioBlob);
         const audio = new Audio(audioUrl);
+        audio.playbackRate = rate;
         
         audio.onended = () => {
           URL.revokeObjectURL(audioUrl);
@@ -145,6 +146,7 @@ export async function playTTS(text: string, voiceId: string): Promise<void> {
 
           const source = audioCtx.createBufferSource();
           source.buffer = audioBuffer;
+          source.playbackRate.value = rate;
           source.connect(audioCtx.destination);
           source.onended = () => {
             resolve();

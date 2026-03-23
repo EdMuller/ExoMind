@@ -10,6 +10,7 @@ import { ConsultChat } from './components/ConsultChat';
 import { SavedItems } from './components/SavedItems';
 import { Settings } from './components/Settings';
 import { VipModal } from './components/VipModal';
+import { BirthdaySurprise } from './components/BirthdaySurprise';
 import { initAudio } from './utils/tts';
 import { useAuth } from './AuthContext';
 
@@ -18,8 +19,9 @@ type ActionType = 'comentar' | 'fotografar' | 'salvar_local' | 'agendar' | 'cons
 type ViewState = 'home' | 'action_selector' | 'action_execute' | 'saved' | 'settings';
 
 export default function App() {
-  const { user, loading, signIn, isVip } = useAuth();
+  const { user, loading, signIn, logOut, isVip } = useAuth();
   const [view, setView] = useState<ViewState>('home');
+
   const [inputMode, setInputMode] = useState<InputMode>(null);
   const [action, setAction] = useState<ActionType>(null);
   const [appName, setAppName] = useState('ExoMind');
@@ -176,6 +178,7 @@ export default function App() {
       </header>
 
       <VipModal isOpen={showVipModal} onClose={() => setShowVipModal(false)} />
+      <BirthdaySurprise />
 
       {/* Main Content Area */}
       <main className="flex-1 relative overflow-hidden flex flex-col">
