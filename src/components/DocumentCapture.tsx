@@ -171,8 +171,19 @@ export function DocumentCapture({ onSaved, onCancel }: Props) {
     }
   };
 
+  const handleGallery = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setPhoto(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const handleSave = async () => {
-    if (!photo || !description.trim()) return;
+    if (!photo) return;
     setIsAnalyzing(true);
     try {
       const scheduleData = await analyzeForSchedule(description);
@@ -221,7 +232,7 @@ export function DocumentCapture({ onSaved, onCancel }: Props) {
         generateICS(scheduleData);
       }
 
-      const metadata = await generateItemMetadata(description, 'photo');
+      const metadata = await generateItemMetadata(description || 'Foto sem descrição', 'photo');
       
       await saveItem({
         id: photoId,
@@ -273,15 +284,34 @@ export function DocumentCapture({ onSaved, onCancel }: Props) {
               ref={fileInputRef}
               onChange={handleCapture}
             />
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="w-48 h-48 rounded-3xl bg-slate-800 border-2 border-dashed border-slate-600 hover:border-purple-500 hover:bg-slate-700 transition-all flex flex-col items-center justify-center gap-4 group"
-            >
-              <Camera size={48} className="text-slate-400 group-hover:text-purple-400 transition-colors" />
-              <span className="text-slate-300 font-medium">Tirar Foto</span>
-            </button>
-            <p className="text-slate-500 text-center text-sm px-8">
-              Tire uma foto do documento para salvá-lo com segurança no seu dispositivo.
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              id="gallery-input"
+              onChange={handleGallery}
+            />
+            
+            <div className="grid grid-cols-1 gap-4 w-full">
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="w-full py-8 rounded-3xl bg-slate-800 border-2 border-dashed border-slate-600 hover:border-purple-500 hover:bg-slate-700 transition-all flex flex-col items-center justify-center gap-4 group"
+              >
+                <Camera size={48} className="text-slate-400 group-hover:text-purple-400 transition-colors" />
+                <span className="text-slate-300 font-medium text-lg">Tirar Foto</span>
+              </button>
+
+              <button
+                onClick={() => document.getElementById('gallery-input')?.click()}
+                className="w-full py-8 rounded-3xl bg-slate-800 border-2 border-dashed border-slate-600 hover:border-blue-500 hover:bg-slate-700 transition-all flex flex-col items-center justify-center gap-4 group"
+              >
+                <ImageIcon size={48} className="text-slate-400 group-hover:text-blue-400 transition-colors" />
+                <span className="text-slate-300 font-medium text-lg">Galeria</span>
+              </button>
+            </div>
+
+            <p className="text-slate-500 text-center text-sm px-8 mt-4">
+              Capture ou selecione um documento para salvá-lo com segurança.
             </p>
           </div>
         ) : (
@@ -296,41 +326,75 @@ export function DocumentCapture({ onSaved, onCancel }: Props) {
               </button>
             </div>
 
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center justify-between">
-                <label className="text-sm font-medium text-slate-300">Descrição / Critérios</label>
-                <div className="flex items-center gap-2">
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col items-center gap-4">
+                <div className="relative">
                   {isRecording && (
-                    <div className="w-24 bg-slate-900 rounded-full h-1 overflow-hidden">
-                      <motion.div 
-                        className="h-full bg-emerald-500"
-                        animate={{ width: `${Math.min(100, audioLevel * 100)}%` }}
-                      />
-                    </div>
+                    <motion.div 
+                      animate={{ 
+                        scale: [1, 1.2 + audioLevel * 2, 1],
+                        opacity: [0.2, 0.4 + audioLevel, 0.2]
+                      }}
+                      transition={{ repeat: Infinity, duration: 1.5 }}
+                      className="absolute inset-0 bg-emerald-500/20 rounded-full" 
+                      style={{ transform: 'scale(1.5)' }} 
+                    />
                   )}
                   <button
                     onClick={isRecording ? stopRecording : startRecording}
                     disabled={isProcessing}
-                    className={`p-2 rounded-full transition-colors ${
-                      isRecording ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'
-                    }`}
+                    className={`relative z-10 w-20 h-20 rounded-full flex items-center justify-center transition-all shadow-lg ${
+                      isRecording 
+                        ? 'bg-emerald-600 hover:bg-emerald-700 animate-pulse' 
+                        : 'bg-blue-600 hover:bg-blue-700'
+                    } ${isProcessing ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
-                    {isProcessing ? <Loader2 size={18} className="animate-spin" /> : <Mic size={18} />}
+                    {isProcessing ? (
+                      <Loader2 size={24} className="text-white animate-spin" />
+                    ) : isRecording ? (
+                      <Mic size={24} className="text-white" />
+                    ) : (
+                      <Mic size={24} className="text-white" />
+                    )}
                   </button>
                 </div>
+                
+                <div className="text-center">
+                  <p className="text-white font-bold text-sm">
+                    {isRecording ? 'Gravando...' : isProcessing ? 'Processando...' : 'Pressione para Falar'}
+                  </p>
+                  <p className="text-slate-400 text-[10px]">
+                    {isRecording ? 'Clique no botão para Enviar' : 'Descreva o documento por voz'}
+                  </p>
+                </div>
+
+                {isRecording && (
+                  <div className="w-full max-w-[150px] bg-slate-900 rounded-full h-1 overflow-hidden border border-slate-700">
+                    <motion.div 
+                      className="h-full bg-emerald-500"
+                      animate={{ width: `${Math.min(100, audioLevel * 100)}%` }}
+                      transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                    />
+                  </div>
+                )}
               </div>
-              <textarea
-                autoFocus
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder={isRecording ? 'Ouvindo...' : "Ex: Recibo do almoço de negócios, CNH, etc..."}
-                className="w-full bg-slate-800 border border-slate-700 rounded-xl p-4 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 resize-none h-32"
-              />
+
+              {(description || isProcessing) && (
+                <div className="flex flex-col gap-2">
+                  <label className="text-sm font-medium text-slate-400">Descrição</label>
+                  <textarea
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    placeholder="A transcrição aparecerá aqui..."
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl p-4 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 resize-none h-24"
+                  />
+                </div>
+              )}
             </div>
 
             <button
               onClick={handleSave}
-              disabled={!description.trim() || isSaving || isAnalyzing || isSuccess}
+              disabled={isSaving || isAnalyzing || isSuccess}
               className={`w-full py-4 rounded-xl font-medium transition-colors flex items-center justify-center gap-2 mt-auto disabled:opacity-50 disabled:cursor-not-allowed ${
                 isSuccess ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'bg-purple-600 hover:bg-purple-700 text-white'
               }`}

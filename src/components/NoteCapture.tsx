@@ -298,16 +298,17 @@ export function NoteCapture({ inputMode, onSaved, onCancel }: NoteCaptureProps) 
           </div>
         ) : null}
 
-        <div className="mb-6">
-          <label className="block text-sm font-medium text-slate-400 mb-2">Nota</label>
-          <textarea
-            autoFocus
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            className="w-full bg-slate-900 border border-slate-700 rounded-xl p-4 text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-none h-32"
-            placeholder="Digite ou dite sua nota aqui..."
-          />
-        </div>
+        {(inputMode === 'text' || note || isProcessing) && (
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-slate-400 mb-2">Nota</label>
+            <textarea
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              className="w-full bg-slate-900 border border-slate-700 rounded-xl p-4 text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-none h-32"
+              placeholder="Digite ou dite sua nota aqui..."
+            />
+          </div>
+        )}
 
         <button
           onClick={handleSave}

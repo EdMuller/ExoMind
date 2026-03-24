@@ -18,7 +18,10 @@ async function startServer() {
       const { text, voiceId } = req.body;
       const apiKey = process.env.ELEVENLABS_SECRET_KEY;
 
+      console.log(`TTS Request: voiceId=${voiceId}, textLength=${text?.length}`);
+
       if (!apiKey) {
+        console.error('ELEVENLABS_SECRET_KEY is missing');
         return res.status(500).json({ error: 'ELEVENLABS_SECRET_KEY is not configured on the server.' });
       }
 
@@ -41,20 +44,26 @@ async function startServer() {
 
       if (!response.ok) {
         const errText = await response.text();
-        console.error('ElevenLabs API error:', errText);
-        return res.status(response.status).json({ error: 'Failed to generate audio with ElevenLabs' });
+        console.error('ElevenLabs API error details:', {
+          status: response.status,
+          statusText: response.statusText,
+          body: errText
+        });
+        return res.status(response.status).json({ 
+          error: 'Failed to generate audio with ElevenLabs',
+          details: errText 
+        });
       }
 
-      // Pipe the audio response back to the client
+      console.log('ElevenLabs TTS successful, sending audio stream');
       res.setHeader('Content-Type', 'audio/mpeg');
       
-      // Node 18+ native fetch response body is a ReadableStream, we can pipe it
       const arrayBuffer = await response.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
       res.send(buffer);
 
     } catch (error) {
-      console.error('TTS Server Error:', error);
+      console.error('TTS Server Exception:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
   });
