@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Settings as SettingsIcon, Download, Upload, Cloud, Bell, Save, CheckCircle2, AlertCircle, User, Image as ImageIcon, Video, Mic, Volume2, Loader2, LogOut, Share2, FileText, QrCode, X } from 'lucide-react';
+import { Settings as SettingsIcon, Download, Upload, Cloud, Bell, Save, CheckCircle2, AlertCircle, User, Image as ImageIcon, Video, Mic, Volume2, Loader2, LogOut, Share2, FileText, QrCode, X, Smartphone } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { QRCodeSVG } from 'qrcode.react';
 import { getAI } from '../utils/ai';
@@ -28,6 +28,28 @@ export function Settings({ onClose }: SettingsProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [isSuccess, setIsSuccess] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e: any) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+  }, []);
+
+  const handleInstallApp = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        setDeferredPrompt(null);
+      }
+    } else {
+      alert("Para instalar o ExoMind:\n\nNo Android: Toque nos três pontos do navegador e selecione 'Instalar aplicativo'.\n\nNo iOS (iPhone): Toque no botão de compartilhar e selecione 'Adicionar à Tela de Início'.");
+    }
+  };
   const [showExportModal, setShowExportModal] = useState(false);
   const [exportFormat, setExportFormat] = useState<'json' | 'txt' | 'csv'>('txt');
   const [exportItems, setExportItems] = useState<string[]>([]); // IDs of items to export
@@ -655,6 +677,25 @@ export function Settings({ onClose }: SettingsProps) {
                 </div>
               </div>
             </div>
+          </section>
+
+          {/* Install Section */}
+          <section className="bg-slate-800 border border-slate-700 rounded-2xl p-5">
+            <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+              <Smartphone size={20} className="text-emerald-400" />
+              Instalar Aplicativo
+            </h3>
+            <p className="text-slate-400 text-sm mb-6">
+              Instale o ExoMind na sua tela de início para acesso rápido e uma experiência de tela cheia.
+            </p>
+            
+            <button
+              onClick={handleInstallApp}
+              className="w-full flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-950 text-white py-3 px-4 rounded-xl font-medium border border-slate-700 transition-colors"
+            >
+              <Download size={18} />
+              {deferredPrompt ? 'Instalar Agora' : 'Como Instalar'}
+            </button>
           </section>
 
           {/* Share Section */}

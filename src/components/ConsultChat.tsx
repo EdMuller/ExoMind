@@ -113,12 +113,12 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
     
     let selectedVoice = localStorage.getItem('exo_voice_preference') || 'Zephyr';
     const voiceRate = parseFloat(localStorage.getItem('exo_voice_rate') || '1.0');
-    if (selectedVoice === 'uHxni9EgaoUr7MGw3Der' && cacaVoiceUses >= 5) {
+    if (selectedVoice === 'uHxni9EgaoUr7MGw3Der' && cacaVoiceUses >= 10) {
       selectedVoice = 'Zephyr'; // Fallback if limit reached
     }
     
-    // Feedback de áudio suave (processando) - use Zephyr to save Cacá uses
-    playTTS("Processando sua pergunta...", selectedVoice === 'uHxni9EgaoUr7MGw3Der' ? 'Zephyr' : selectedVoice, voiceRate);
+    // Feedback de áudio suave (processando) - removido a pedido do usuário
+    // playTTS("Processando sua pergunta...", selectedVoice === 'uHxni9EgaoUr7MGw3Der' ? 'Zephyr' : selectedVoice, voiceRate);
 
     try {
       const ai = getAI();

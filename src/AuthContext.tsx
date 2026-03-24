@@ -17,7 +17,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
-const APP_VERSION = '1.0.9';
+const APP_VERSION = '1.1.0';
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -29,8 +29,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     const checkVersionAndAuth = async () => {
       const lastVersion = localStorage.getItem('app_version');
+      console.log('App Version Check:', { lastVersion, currentVersion: APP_VERSION });
       
       if (lastVersion && lastVersion !== APP_VERSION) {
+        console.log('Version mismatch detected. Forcing logout...');
         // Force logout on version change
         await signOut(auth);
         localStorage.setItem('app_version', APP_VERSION);
