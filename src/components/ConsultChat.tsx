@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Send, Loader2, Bot, User, Mic, MicOff, X, Image as ImageIcon } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { GoogleGenAI, LiveServerMessage, Type, Modality } from '@google/genai';
+import ReactMarkdown from 'react-markdown';
 import { getAI } from '../utils/ai';
 import { getItems } from '../db';
 import { playTTS, initAudio, getAudioContext } from '../utils/tts';
@@ -63,7 +64,7 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
           return `ID: ${item.id} | Data: [${date}] | Tipo: ${item.type} | Título/Descrição: ${item.metadata?.description || 'Sem descrição'} | Conteúdo: ${content}`;
         }).join('\n\n');
         
-        const baseInstruction = `Seu nome é ${appName}. O nome do usuário com quem você está falando é ${userName}. Aqui estão as memórias e anotações salvas pelo usuário:\n\n${contextString}\n\nResponda às perguntas do usuário com base nessas informações.\n\nINSTRUÇÕES ADICIONAIS DO USUÁRIO:\n${customInstructions}`;
+        const baseInstruction = `Seu nome é ${appName}. O nome do usuário com quem você está falando é ${userName}. Aqui estão as memórias e anotações salvas pelo usuário:\n\n${contextString}\n\nResponda às perguntas do usuário com base nessas informações.\n\nIMPORTANTE: Sempre que fornecer links (músicas, sites, etc), use o formato Markdown [Título](URL) para que o link seja clicável.\n\nINSTRUÇÕES ADICIONAIS DO USUÁRIO:\n${customInstructions}`;
         
         setDbContextText(`${baseInstruction} Se o usuário pedir para ver uma foto ou imagem, você DEVE incluir a tag <IMG:id_da_imagem> na sua resposta. Por exemplo: "Aqui está a foto: <IMG:123456789>".`);
         
@@ -424,7 +425,9 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
                     ? 'bg-blue-600 text-white rounded-tr-sm' 
                     : 'bg-slate-800 text-slate-200 border border-slate-700 rounded-tl-sm'
                 }`}>
-                  <p className="whitespace-pre-wrap text-sm leading-relaxed">{msg.content}</p>
+                  <div className="markdown-body text-sm leading-relaxed">
+                    <ReactMarkdown>{msg.content}</ReactMarkdown>
+                  </div>
                   {msg.images && msg.images.map((img, idx) => (
                     <div key={idx} className="mt-3 rounded-lg overflow-hidden border border-slate-700 bg-black">
                       <img src={img} alt="Imagem recuperada" className="w-full h-auto max-h-64 object-contain" />
