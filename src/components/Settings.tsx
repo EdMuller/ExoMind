@@ -24,6 +24,8 @@ export function Settings({ onClose }: SettingsProps) {
   const [selectedVoice, setSelectedVoice] = useState('Zephyr');
   const [voiceRate, setVoiceRate] = useState(1.0);
   const [webSearchEnabled, setWebSearchEnabled] = useState(localStorage.getItem('exo_web_search') === 'true');
+  const [silenceTimeout, setSilenceTimeout] = useState(3);
+  const [handsFreeEnabled, setHandsFreeEnabled] = useState(localStorage.getItem('exo_voice_hands_free') === 'true');
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [status, setStatus] = useState<{ type: 'success' | 'error' | null; message: string }>({ type: null, message: '' });
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -75,6 +77,8 @@ export function Settings({ onClose }: SettingsProps) {
     setSelectedVoice(localStorage.getItem('exo_voice_preference') || 'Zephyr');
     setVoiceRate(parseFloat(localStorage.getItem('exo_voice_rate') || '1.0'));
     setWebSearchEnabled(localStorage.getItem('exo_web_search') === 'true');
+    setSilenceTimeout(parseInt(localStorage.getItem('exo_voice_silence_timeout') || '3', 10));
+    setHandsFreeEnabled(localStorage.getItem('exo_voice_hands_free') === 'true');
   }, []);
 
   const showStatus = (type: 'success' | 'error', message: string) => {
@@ -93,6 +97,8 @@ export function Settings({ onClose }: SettingsProps) {
     localStorage.setItem('exo_voice_preference', selectedVoice);
     localStorage.setItem('exo_voice_rate', voiceRate.toString());
     localStorage.setItem('exo_web_search', webSearchEnabled.toString());
+    localStorage.setItem('exo_voice_silence_timeout', silenceTimeout.toString());
+    localStorage.setItem('exo_voice_hands_free', handsFreeEnabled.toString());
     window.dispatchEvent(new Event('settingsUpdated'));
     
     setIsSuccess(true);
@@ -539,6 +545,47 @@ export function Settings({ onClose }: SettingsProps) {
                   className="flex-1 h-2 bg-slate-900 rounded-lg appearance-none cursor-pointer accent-emerald-500"
                 />
                 <span className="text-xs text-slate-500">2.0x</span>
+              </div>
+            </div>
+
+            <div className="mt-6 pt-6 border-t border-slate-700">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <Mic size={18} className="text-emerald-400" />
+                  <span className="text-sm font-medium text-white">Modo Conversa Contínua (Mãos Livres)</span>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input 
+                    type="checkbox" 
+                    className="sr-only peer" 
+                    checked={handsFreeEnabled}
+                    onChange={(e) => setHandsFreeEnabled(e.target.checked)}
+                  />
+                  <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                </label>
+              </div>
+
+              <div className="mb-2">
+                <label className="block text-sm font-medium text-slate-400 mb-2 flex justify-between">
+                  <span>Tempo de Pausa (Silêncio)</span>
+                  <span className="text-emerald-400 font-mono">{silenceTimeout}s</span>
+                </label>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-slate-500">1s</span>
+                  <input
+                    type="range"
+                    min="1"
+                    max="10"
+                    step="1"
+                    value={silenceTimeout}
+                    onChange={(e) => setSilenceTimeout(parseInt(e.target.value))}
+                    className="flex-1 h-2 bg-slate-900 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                  />
+                  <span className="text-xs text-slate-500">10s</span>
+                </div>
+                <p className="text-xs text-slate-500 mt-2">
+                  Define quanto tempo de silêncio o ExoMind deve esperar antes de considerar que você terminou de falar.
+                </p>
               </div>
             </div>
 

@@ -35,10 +35,15 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
   // Voice state
   const [isRecording, setIsRecording] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
+  const [userVolume, setUserVolume] = useState(0);
+  const [isModelSpeaking, setIsModelSpeaking] = useState(false);
   const sessionRef = useRef<any>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
+  const currentSourceRef = useRef<AudioBufferSourceNode | null>(null);
+  const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const lastActiveTimeRef = useRef<number>(Date.now());
 
   useEffect(() => {
     const loadContext = async () => {
@@ -186,6 +191,7 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
     
     const selectedVoice = localStorage.getItem('exo_voice_preference') || 'Zephyr';
     const webSearchEnabled = localStorage.getItem('exo_web_search') === 'true';
+    const silenceTimeout = parseInt(localStorage.getItem('exo_voice_silence_timeout') || '3', 10);
     // Gemini Live API requires a prebuilt voice. If it's an ElevenLabs ID, fallback to Zephyr for the Live API.
     const liveVoice = selectedVoice === 'uHxni9EgaoUr7MGw3Der' ? 'Zephyr' : selectedVoice;
 
@@ -230,7 +236,7 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
       processor.connect(audioContext.destination);
 
       const sessionPromise = ai.live.connect({
-        model: 'gemini-2.5-flash-native-audio-preview-09-2025',
+        model: 'gemini-2.5-flash-native-audio-preview-12-2025',
         config: {
           responseModalities: [Modality.AUDIO],
           speechConfig: {
@@ -243,9 +249,43 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
           onopen: () => {
             setIsRecording(true);
             setIsConnecting(false);
+            lastActiveTimeRef.current = Date.now();
 
             processor.onaudioprocess = (e) => {
               const inputData = e.inputBuffer.getChannelData(0);
+              
+              // Calculate volume for visual feedback and interruption
+              let sum = 0;
+              for (let i = 0; i < inputData.length; i++) {
+                sum += inputData[i] * inputData[i];
+              }
+              const volume = Math.sqrt(sum / inputData.length);
+              setUserVolume(volume);
+
+              // Interruption handling: if user starts talking, stop model audio
+              if (volume > 0.05 && currentSourceRef.current) {
+                currentSourceRef.current.stop();
+                currentSourceRef.current = null;
+                setIsModelSpeaking(false);
+              }
+
+              // Silence detection for visual feedback
+              if (volume > 0.02) {
+                lastActiveTimeRef.current = Date.now();
+                if (silenceTimerRef.current) {
+                  clearTimeout(silenceTimerRef.current);
+                  silenceTimerRef.current = null;
+                }
+                if (isLoading) setIsLoading(false);
+              } else if (!isLoading && Date.now() - lastActiveTimeRef.current > 500) {
+                // If it's been silent for 0.5s, start a timer to show "Thinking"
+                if (!silenceTimerRef.current) {
+                  silenceTimerRef.current = setTimeout(() => {
+                    setIsLoading(true);
+                  }, silenceTimeout * 1000 - 500);
+                }
+              }
+
               const pcmData = new Int16Array(inputData.length);
               for (let i = 0; i < inputData.length; i++) {
                 pcmData[i] = Math.max(-32768, Math.min(32767, inputData[i] * 32768));
@@ -266,8 +306,17 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
             };
           },
           onmessage: async (message: LiveServerMessage) => {
+            if (message.serverContent?.modelTurn) {
+              setIsLoading(false);
+              if (silenceTimerRef.current) {
+                clearTimeout(silenceTimerRef.current);
+                silenceTimerRef.current = null;
+              }
+            }
+
             const base64Audio = message.serverContent?.modelTurn?.parts[0]?.inlineData?.data;
             if (base64Audio) {
+              setIsModelSpeaking(true);
               const binaryString = atob(base64Audio);
               const len = binaryString.length;
               const bytes = new Uint8Array(len);
@@ -296,6 +345,13 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
                 const source = audioCtx.createBufferSource();
                 source.buffer = audioBuffer;
                 source.connect(audioCtx.destination);
+                currentSourceRef.current = source;
+                source.onended = () => {
+                  if (currentSourceRef.current === source) {
+                    currentSourceRef.current = null;
+                    setIsModelSpeaking(false);
+                  }
+                };
                 source.start();
               } catch (e) {
                 // Fallback: Assume raw 16-bit Linear PCM (24kHz)
@@ -309,6 +365,13 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
                 const source = audioCtx.createBufferSource();
                 source.buffer = audioBuffer;
                 source.connect(audioCtx.destination);
+                currentSourceRef.current = source;
+                source.onended = () => {
+                  if (currentSourceRef.current === source) {
+                    currentSourceRef.current = null;
+                    setIsModelSpeaking(false);
+                  }
+                };
                 source.start();
               }
             }
@@ -355,6 +418,14 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
   };
 
   const stopVoiceSession = () => {
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+    if (currentSourceRef.current) {
+      currentSourceRef.current.stop();
+      currentSourceRef.current = null;
+    }
     if (processorRef.current) {
       processorRef.current.disconnect();
       processorRef.current.onaudioprocess = null;
@@ -483,17 +554,35 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
               <img src={displayedImage} alt="Imagem solicitada" className="w-full h-auto max-h-64 object-contain" />
             </motion.div>
           )}
+          
+          <div className="text-center mb-8">
+            <h3 className="text-xl font-bold text-white mb-2">
+              {isConnecting ? 'Conectando...' : isModelSpeaking ? 'ExoMind falando...' : isLoading ? 'Pensando...' : 'Estou ouvindo...'}
+            </h3>
+            <p className="text-slate-400 text-sm">
+              {isModelSpeaking ? 'Aguarde o assistente terminar ou comece a falar para interromper.' : 'Fale naturalmente. O assistente responderá após sua pausa.'}
+            </p>
+          </div>
+
           <div className="relative mb-12">
             {isRecording && (
-              <div className="absolute inset-0 bg-emerald-500/20 rounded-full animate-ping" style={{ transform: 'scale(1.5)' }} />
+              <motion.div 
+                animate={{ 
+                  scale: [1, 1.2 + userVolume * 2, 1],
+                  opacity: [0.2, 0.4 + userVolume, 0.2]
+                }}
+                transition={{ repeat: Infinity, duration: 1.5 }}
+                className="absolute inset-0 bg-emerald-500/20 rounded-full" 
+                style={{ transform: 'scale(1.5)' }} 
+              />
             )}
             <button
               onClick={isRecording ? stopVoiceSession : startVoiceSession}
               disabled={isConnecting}
               className={`relative z-10 w-32 h-32 rounded-full flex items-center justify-center transition-all shadow-2xl ${
                 isRecording 
-                  ? 'bg-red-500 hover:bg-red-600' 
-                  : 'bg-emerald-500 hover:bg-emerald-600'
+                  ? 'bg-red-500 hover:bg-red-600 scale-110' 
+                  : 'bg-emerald-600 hover:bg-emerald-700'
               } ${isConnecting ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               {isConnecting ? (
@@ -505,14 +594,16 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
               )}
             </button>
           </div>
-          <h3 className="text-2xl font-medium text-white mb-2">
-            {isConnecting ? 'Conectando...' : isRecording ? 'Ouvindo...' : 'Toque para iniciar'}
-          </h3>
-          <p className="text-slate-400 text-center max-w-xs">
-            {isRecording 
-              ? 'Faça perguntas sobre suas memórias salvas.' 
-              : 'Inicie a conversa por voz para consultar o ExoMind.'}
-          </p>
+
+          {isRecording && (
+            <div className="w-full max-w-xs bg-slate-800/50 rounded-full h-1.5 overflow-hidden border border-slate-700">
+              <motion.div 
+                className="h-full bg-emerald-500"
+                animate={{ width: `${Math.min(100, userVolume * 500)}%` }}
+                transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+              />
+            </div>
+          )}
         </div>
       )}
     </motion.div>
