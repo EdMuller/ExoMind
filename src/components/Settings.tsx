@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Settings as SettingsIcon, Download, Upload, Cloud, Bell, Save, CheckCircle2, AlertCircle, User, Image as ImageIcon, Video, Mic, Volume2, Loader2, LogOut, Share2, FileText, QrCode, X, Smartphone } from 'lucide-react';
+import { Settings as SettingsIcon, Download, Upload, Cloud, Bell, Save, CheckCircle2, AlertCircle, User, Image as ImageIcon, Video, Mic, Volume2, Loader2, LogOut, Share2, FileText, QrCode, X, Smartphone, Globe } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { QRCodeSVG } from 'qrcode.react';
 import { getAI } from '../utils/ai';
@@ -23,6 +23,7 @@ export function Settings({ onClose }: SettingsProps) {
   const [backupInterval, setBackupInterval] = useState<number>(7);
   const [selectedVoice, setSelectedVoice] = useState('Zephyr');
   const [voiceRate, setVoiceRate] = useState(1.0);
+  const [webSearchEnabled, setWebSearchEnabled] = useState(localStorage.getItem('exo_web_search') === 'true');
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [status, setStatus] = useState<{ type: 'success' | 'error' | null; message: string }>({ type: null, message: '' });
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -73,6 +74,7 @@ export function Settings({ onClose }: SettingsProps) {
     setBackupInterval(parseInt(localStorage.getItem('backupInterval') || '7', 10));
     setSelectedVoice(localStorage.getItem('exo_voice_preference') || 'Zephyr');
     setVoiceRate(parseFloat(localStorage.getItem('exo_voice_rate') || '1.0'));
+    setWebSearchEnabled(localStorage.getItem('exo_web_search') === 'true');
   }, []);
 
   const showStatus = (type: 'success' | 'error', message: string) => {
@@ -90,6 +92,7 @@ export function Settings({ onClose }: SettingsProps) {
     localStorage.setItem('backupInterval', backupInterval.toString());
     localStorage.setItem('exo_voice_preference', selectedVoice);
     localStorage.setItem('exo_voice_rate', voiceRate.toString());
+    localStorage.setItem('exo_web_search', webSearchEnabled.toString());
     window.dispatchEvent(new Event('settingsUpdated'));
     
     setIsSuccess(true);
@@ -537,6 +540,27 @@ export function Settings({ onClose }: SettingsProps) {
                 />
                 <span className="text-xs text-slate-500">2.0x</span>
               </div>
+            </div>
+
+            <div className="mt-6 pt-6 border-t border-slate-700">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <Globe size={18} className="text-blue-400" />
+                  <span className="text-sm font-medium text-white">Busca na Web (Google Search)</span>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input 
+                    type="checkbox" 
+                    className="sr-only peer" 
+                    checked={webSearchEnabled}
+                    onChange={(e) => setWebSearchEnabled(e.target.checked)}
+                  />
+                  <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                </label>
+              </div>
+              <p className="text-xs text-slate-500">
+                Permite que o ExoMind busque informações em tempo real na internet (clima, notícias, músicas, etc).
+              </p>
             </div>
 
             {selectedVoice === 'uHxni9EgaoUr7MGw3Der' && (

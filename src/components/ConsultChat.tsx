@@ -113,6 +113,7 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
     
     let selectedVoice = localStorage.getItem('exo_voice_preference') || 'Zephyr';
     const voiceRate = parseFloat(localStorage.getItem('exo_voice_rate') || '1.0');
+    const webSearchEnabled = localStorage.getItem('exo_web_search') === 'true';
     if (selectedVoice === 'uHxni9EgaoUr7MGw3Der' && cacaVoiceUses >= 10) {
       selectedVoice = 'Zephyr'; // Fallback if limit reached
     }
@@ -122,11 +123,17 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
 
     try {
       const ai = getAI();
+      const tools: any[] = [];
+      if (webSearchEnabled) {
+        tools.push({ googleSearch: {} });
+      }
+
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: userMsg,
         config: {
           systemInstruction: dbContextText || 'Você é o ExoMind.',
+          tools: tools.length > 0 ? tools : undefined,
         }
       });
 
@@ -140,10 +147,12 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
         images: processed.images
       }]);
       
-      // Ler a resposta em voz alta
-      await playTTS(processed.text, selectedVoice, voiceRate);
-      if (selectedVoice === 'uHxni9EgaoUr7MGw3Der') {
-        await incrementCacaVoiceUses();
+      // Ler a resposta em voz alta - Apenas se o modo de entrada for voz
+      if (inputMode === 'voice') {
+        await playTTS(processed.text, selectedVoice, voiceRate);
+        if (selectedVoice === 'uHxni9EgaoUr7MGw3Der') {
+          await incrementCacaVoiceUses();
+        }
       }
     } catch (error: any) {
       console.error('Error generating response:', error);
@@ -163,11 +172,37 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
     setDisplayedImage(null);
     
     const selectedVoice = localStorage.getItem('exo_voice_preference') || 'Zephyr';
+    const webSearchEnabled = localStorage.getItem('exo_web_search') === 'true';
     // Gemini Live API requires a prebuilt voice. If it's an ElevenLabs ID, fallback to Zephyr for the Live API.
     const liveVoice = selectedVoice === 'uHxni9EgaoUr7MGw3Der' ? 'Zephyr' : selectedVoice;
 
     try {
       const ai = getAI();
+      const tools: any[] = [
+        {
+          functionDeclarations: [
+            {
+              name: 'showImage',
+              description: 'Mostra uma imagem salva para o usuário na tela.',
+              parameters: {
+                type: Type.OBJECT,
+                properties: {
+                  imageId: {
+                    type: Type.STRING,
+                    description: 'O ID da imagem a ser mostrada.',
+                  },
+                },
+                required: ['imageId'],
+              },
+            }
+          ]
+        }
+      ];
+
+      if (webSearchEnabled) {
+        tools.push({ googleSearch: {} });
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaStreamRef.current = stream;
 
@@ -189,24 +224,7 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
             voiceConfig: { prebuiltVoiceConfig: { voiceName: liveVoice } },
           },
           systemInstruction: dbContextVoice,
-          tools: [{
-            functionDeclarations: [
-              {
-                name: 'showImage',
-                description: 'Mostra uma imagem salva para o usuário na tela.',
-                parameters: {
-                  type: Type.OBJECT,
-                  properties: {
-                    imageId: {
-                      type: Type.STRING,
-                      description: 'O ID da imagem a ser mostrada.',
-                    },
-                  },
-                  required: ['imageId'],
-                },
-              }
-            ]
-          }]
+          tools: tools
         },
         callbacks: {
           onopen: () => {
