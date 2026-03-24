@@ -18,140 +18,131 @@ export function NoteCapture({ inputMode, onSaved, onCancel }: NoteCaptureProps) 
   const [note, setNote] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
-  const [isConnecting, setIsConnecting] = useState(false);
-  const [statusText, setStatusText] = useState('Toque para iniciar');
-  const [stream, setStream] = useState<MediaStream | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [audioLevel, setAudioLevel] = useState(0);
+  const [statusText, setStatusText] = useState('Pressione para Falar');
   const [isSuccess, setIsSuccess] = useState(false);
   const [scheduleSuggestion, setScheduleSuggestion] = useState<any>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   
-  const sessionRef = useRef<any>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const animationFrameRef = useRef<number | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
-  const processorRef = useRef<ScriptProcessorNode | null>(null);
 
-  const startSession = async () => {
-    setIsConnecting(true);
-    setStatusText('Conectando...');
-
+  const startRecording = async () => {
     try {
-      const ai = getAI();
-      const mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaStreamRef.current = mediaStream;
-      setStream(mediaStream);
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStreamRef.current = stream;
+      
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
 
-      const audioContext = new AudioContext({ sampleRate: 16000 });
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        await processVoiceInput(audioBlob);
+      };
+
+      // Set up audio visualization
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
       audioContextRef.current = audioContext;
+      const source = audioContext.createMediaStreamSource(stream);
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 256;
+      analyserRef.current = analyser;
+      source.connect(analyser);
 
-      const source = audioContext.createMediaStreamSource(mediaStream);
-      const processor = audioContext.createScriptProcessor(4096, 1, 1);
-      processorRef.current = processor;
+      const updateLevel = () => {
+        const dataArray = new Uint8Array(analyser.frequencyBinCount);
+        analyser.getByteFrequencyData(dataArray);
+        const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+        setAudioLevel(average / 128);
+        animationFrameRef.current = requestAnimationFrame(updateLevel);
+      };
+      updateLevel();
 
-      source.connect(processor);
-      processor.connect(audioContext.destination);
-
-      const selectedVoice = localStorage.getItem('exo_voice_preference') || 'Zephyr';
-      const liveVoice = selectedVoice === 'uHxni9EgaoUr7MGw3Der' ? 'Zephyr' : selectedVoice;
-
-      const sessionPromise = ai.live.connect({
-        model: 'gemini-2.5-flash-native-audio-preview-09-2025',
-        config: {
-          responseModalities: [Modality.AUDIO],
-          speechConfig: {
-            voiceConfig: { prebuiltVoiceConfig: { voiceName: liveVoice } },
-          },
-          systemInstruction: 'Você está no modo de ditado. Apenas ouça o usuário. Não responda, não converse, não faça perguntas. Apenas ouça.',
-          inputAudioTranscription: {},
-        },
-        callbacks: {
-          onopen: () => {
-            setIsRecording(true);
-            setIsConnecting(false);
-            setStatusText('Ouvindo...');
-
-            processor.onaudioprocess = (e) => {
-              const inputData = e.inputBuffer.getChannelData(0);
-              const pcmData = new Int16Array(inputData.length);
-              for (let i = 0; i < inputData.length; i++) {
-                pcmData[i] = Math.max(-32768, Math.min(32767, inputData[i] * 32768));
-              }
-
-              const buffer = new ArrayBuffer(pcmData.length * 2);
-              const view = new DataView(buffer);
-              for (let i = 0; i < pcmData.length; i++) {
-                view.setInt16(i * 2, pcmData[i], true);
-              }
-              const base64Data = btoa(String.fromCharCode(...new Uint8Array(buffer)));
-
-              sessionPromise.then((session) => {
-                session.sendRealtimeInput({
-                  audio: { data: base64Data, mimeType: 'audio/pcm;rate=16000' },
-                });
-              });
-            };
-          },
-          onmessage: async (message: LiveServerMessage) => {
-            // Handle user transcription
-            const transcription = message.serverContent?.inputTranscription;
-            if (transcription && transcription.text) {
-              setNote(prev => {
-                // Se for o primeiro texto, apenas define
-                if (!prev) return transcription.text || '';
-                // Se já tiver texto, adiciona com espaço
-                return prev + (prev.endsWith(' ') ? '' : ' ') + transcription.text;
-              });
-            }
-          },
-          onclose: () => {
-            stopSession();
-          },
-          onerror: (err) => {
-            console.error('Live API Error:', err);
-            stopSession();
-            setStatusText('Erro na conexão');
-          }
-        },
-      });
-
-      sessionRef.current = await sessionPromise;
-
+      mediaRecorder.start();
+      setIsRecording(true);
+      setStatusText('Gravando...');
     } catch (error) {
-      console.error('Error starting voice session:', error);
-      setIsConnecting(false);
+      console.error('Error starting recording:', error);
       setStatusText('Erro ao acessar microfone');
     }
   };
 
-  const stopSession = () => {
-    if (processorRef.current) {
-      processorRef.current.disconnect();
-      processorRef.current.onaudioprocess = null;
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      setIsProcessing(true);
+      setStatusText('Processando...');
+      
+      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+      if (audioContextRef.current) audioContextRef.current.close();
+      if (mediaStreamRef.current) mediaStreamRef.current.getTracks().forEach(track => track.stop());
     }
-    if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach(track => track.stop());
+  };
+
+  const processVoiceInput = async (audioBlob: Blob) => {
+    try {
+      const reader = new FileReader();
+      const base64Promise = new Promise<string>((resolve) => {
+        reader.onloadend = () => {
+          const base64String = (reader.result as string).split(',')[1];
+          resolve(base64String);
+        };
+      });
+      reader.readAsDataURL(audioBlob);
+      const base64Audio = await base64Promise;
+
+      const ai = getAI();
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              {
+                inlineData: {
+                  mimeType: 'audio/webm',
+                  data: base64Audio
+                }
+              },
+              { text: "Transcreva exatamente o que foi dito no áudio acima. Retorne apenas a transcrição, sem comentários." }
+            ]
+          }
+        ]
+      });
+
+      const transcription = response.text || '';
+      if (transcription) {
+        setNote(prev => prev + (prev ? ' ' : '') + transcription.trim());
+      }
+      setStatusText('Pressione para Falar');
+    } catch (error) {
+      console.error('Error processing voice input:', error);
+      setStatusText('Erro ao processar áudio');
+    } finally {
+      setIsProcessing(false);
     }
-    if (audioContextRef.current) {
-      audioContextRef.current.close();
-    }
-    if (sessionRef.current) {
-      try {
-        sessionRef.current.close();
-      } catch (e) {}
-    }
-    setStream(null);
-    setIsRecording(false);
-    setIsConnecting(false);
-    setStatusText('Toque para iniciar');
   };
 
   useEffect(() => {
-    if (inputMode === 'voice') {
-      startSession();
-    }
     return () => {
-      stopSession();
+      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+      if (audioContextRef.current) audioContextRef.current.close();
+      if (mediaStreamRef.current) mediaStreamRef.current.getTracks().forEach(track => track.stop());
     };
-  }, [inputMode]);
+  }, []);
 
   const handleSave = async () => {
     if (!note.trim()) return;
@@ -254,33 +245,56 @@ export function NoteCapture({ inputMode, onSaved, onCancel }: NoteCaptureProps) 
         <h2 className="text-2xl font-bold text-white mb-6">Novo Comentário</h2>
 
         {inputMode === 'voice' ? (
-          <div className="flex flex-col items-center mb-6">
-            <div className="relative mb-8 mt-4">
+          <div className="flex flex-col items-center mb-6 gap-4">
+            <div className="relative">
               {isRecording && (
-                <div className="absolute inset-0 bg-emerald-500/20 rounded-full animate-ping" style={{ transform: 'scale(1.5)' }} />
+                <motion.div 
+                  animate={{ 
+                    scale: [1, 1.2 + audioLevel * 2, 1],
+                    opacity: [0.2, 0.4 + audioLevel, 0.2]
+                  }}
+                  transition={{ repeat: Infinity, duration: 1.5 }}
+                  className="absolute inset-0 bg-emerald-500/20 rounded-full" 
+                  style={{ transform: 'scale(1.5)' }} 
+                />
               )}
               <button
-                onClick={isRecording ? stopSession : startSession}
-                disabled={isConnecting}
+                onClick={isRecording ? stopRecording : startRecording}
+                disabled={isProcessing}
                 className={`relative z-10 w-24 h-24 rounded-full flex items-center justify-center transition-all shadow-lg ${
                   isRecording 
-                    ? 'bg-red-500 hover:bg-red-600' 
-                    : 'bg-emerald-500 hover:bg-emerald-600'
-                } ${isConnecting ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    ? 'bg-emerald-600 hover:bg-emerald-700 animate-pulse' 
+                    : 'bg-blue-600 hover:bg-blue-700'
+                } ${isProcessing ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
-                {isConnecting ? (
+                {isProcessing ? (
                   <Loader2 size={32} className="text-white animate-spin" />
                 ) : isRecording ? (
-                  <MicOff size={32} className="text-white" />
+                  <Mic size={32} className="text-white" />
                 ) : (
                   <Mic size={32} className="text-white" />
                 )}
               </button>
             </div>
-            <p className="text-slate-400 text-sm mb-4">{statusText}</p>
-            <div className="h-16 w-full flex items-center justify-center">
-              <AudioVisualizer stream={stream} isRecording={isRecording} />
+            
+            <div className="text-center">
+              <p className="text-white font-bold mb-1">
+                {isRecording ? 'Gravando...' : isProcessing ? 'Processando...' : 'Pressione para Falar'}
+              </p>
+              <p className="text-slate-400 text-xs">
+                {isRecording ? 'Clique no botão para Enviar' : 'Sua voz será transcrita abaixo'}
+              </p>
             </div>
+
+            {isRecording && (
+              <div className="w-full max-w-[200px] bg-slate-900 rounded-full h-1.5 overflow-hidden border border-slate-700">
+                <motion.div 
+                  className="h-full bg-emerald-500"
+                  animate={{ width: `${Math.min(100, audioLevel * 100)}%` }}
+                  transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                />
+              </div>
+            )}
           </div>
         ) : null}
 

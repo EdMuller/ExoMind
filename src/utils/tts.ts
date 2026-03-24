@@ -46,28 +46,19 @@ export async function playTTS(text: string, voiceId: string, rate: number = 1.0)
   return new Promise(async (resolve, reject) => {
     try {
       if (voiceId === 'uHxni9EgaoUr7MGw3Der') {
-        const apiKey = process.env.ELEVENLABS_SECRET_KEY;
-        if (!apiKey) {
-          throw new Error('ElevenLabs API Key not configured');
-        }
-        const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+        const response = await fetch('/api/tts', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'xi-api-key': apiKey
           },
           body: JSON.stringify({
             text: text,
-            model_id: 'eleven_multilingual_v2',
-            voice_settings: {
-              stability: 0.5,
-              similarity_boost: 0.75
-            }
+            voiceId: voiceId
           })
         });
 
         if (!response.ok) {
-          throw new Error('Falha ao gerar áudio com ElevenLabs');
+          throw new Error('Falha ao gerar áudio com ElevenLabs via servidor');
         }
 
         const audioBlob = await response.blob();

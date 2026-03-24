@@ -34,16 +34,14 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
 
   // Voice state
   const [isRecording, setIsRecording] = useState(false);
-  const [isConnecting, setIsConnecting] = useState(false);
-  const [userVolume, setUserVolume] = useState(0);
-  const [isModelSpeaking, setIsModelSpeaking] = useState(false);
-  const sessionRef = useRef<any>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [audioLevel, setAudioLevel] = useState(0);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const animationFrameRef = useRef<number | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
-  const processorRef = useRef<ScriptProcessorNode | null>(null);
-  const currentSourceRef = useRef<AudioBufferSourceNode | null>(null);
-  const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const lastActiveTimeRef = useRef<number>(Date.now());
 
   useEffect(() => {
     const loadContext = async () => {
@@ -185,275 +183,149 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
     }
   };
 
-  const startVoiceSession = async () => {
-    setIsConnecting(true);
-    setDisplayedImage(null);
-    
-    const selectedVoice = localStorage.getItem('exo_voice_preference') || 'Zephyr';
-    const webSearchEnabled = localStorage.getItem('exo_web_search') === 'true';
-    const silenceTimeout = parseInt(localStorage.getItem('exo_voice_silence_timeout') || '3', 10);
-    // Gemini Live API requires a prebuilt voice. If it's an ElevenLabs ID, fallback to Zephyr for the Live API.
-    const liveVoice = selectedVoice === 'uHxni9EgaoUr7MGw3Der' ? 'Zephyr' : selectedVoice;
-
+  const startRecording = async () => {
     try {
-      const ai = getAI();
-      const tools: any[] = [
-        {
-          functionDeclarations: [
-            {
-              name: 'showImage',
-              description: 'Mostra uma imagem salva para o usuário na tela.',
-              parameters: {
-                type: Type.OBJECT,
-                properties: {
-                  imageId: {
-                    type: Type.STRING,
-                    description: 'O ID da imagem a ser mostrada.',
-                  },
-                },
-                required: ['imageId'],
-              },
-            }
-          ]
-        }
-      ];
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStreamRef.current = stream;
+      
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
 
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        await processVoiceInput(audioBlob);
+      };
+
+      // Set up audio visualization
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      audioContextRef.current = audioContext;
+      const source = audioContext.createMediaStreamSource(stream);
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 256;
+      analyserRef.current = analyser;
+      source.connect(analyser);
+
+      const updateLevel = () => {
+        const dataArray = new Uint8Array(analyser.frequencyBinCount);
+        analyser.getByteFrequencyData(dataArray);
+        const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+        setAudioLevel(average / 128); // Normalize to 0-1 approx
+        animationFrameRef.current = requestAnimationFrame(updateLevel);
+      };
+      updateLevel();
+
+      mediaRecorder.start();
+      setIsRecording(true);
+    } catch (error) {
+      console.error('Error starting recording:', error);
+      alert('Erro ao acessar o microfone.');
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      setIsProcessing(true);
+      
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+      if (audioContextRef.current) {
+        audioContextRef.current.close();
+      }
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach(track => track.stop());
+      }
+    }
+  };
+
+  const processVoiceInput = async (audioBlob: Blob) => {
+    setIsLoading(true);
+    try {
+      const reader = new FileReader();
+      const base64Promise = new Promise<string>((resolve) => {
+        reader.onloadend = () => {
+          const base64String = (reader.result as string).split(',')[1];
+          resolve(base64String);
+        };
+      });
+      reader.readAsDataURL(audioBlob);
+      const base64Audio = await base64Promise;
+
+      const ai = getAI();
+      const webSearchEnabled = localStorage.getItem('exo_web_search') === 'true';
+      const tools: any[] = [];
       if (webSearchEnabled) {
         tools.push({ googleSearch: {} });
       }
 
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaStreamRef.current = stream;
+      // Add user message placeholder
+      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'user', content: '(Mensagem de voz)' }]);
 
-      const audioContext = new AudioContext({ sampleRate: 16000 });
-      audioContextRef.current = audioContext;
-
-      const source = audioContext.createMediaStreamSource(stream);
-      const processor = audioContext.createScriptProcessor(4096, 1, 1);
-      processorRef.current = processor;
-
-      source.connect(processor);
-      processor.connect(audioContext.destination);
-
-      const sessionPromise = ai.live.connect({
-        model: 'gemini-2.5-flash-native-audio-preview-12-2025',
-        config: {
-          responseModalities: [Modality.AUDIO],
-          speechConfig: {
-            voiceConfig: { prebuiltVoiceConfig: { voiceName: liveVoice } },
-          },
-          systemInstruction: dbContextVoice,
-          tools: tools
-        },
-        callbacks: {
-          onopen: () => {
-            setIsRecording(true);
-            setIsConnecting(false);
-            lastActiveTimeRef.current = Date.now();
-
-            processor.onaudioprocess = (e) => {
-              const inputData = e.inputBuffer.getChannelData(0);
-              
-              // Calculate volume for visual feedback and interruption
-              let sum = 0;
-              for (let i = 0; i < inputData.length; i++) {
-                sum += inputData[i] * inputData[i];
-              }
-              const volume = Math.sqrt(sum / inputData.length);
-              setUserVolume(volume);
-
-              // Interruption handling: if user starts talking, stop model audio
-              if (volume > 0.05 && currentSourceRef.current) {
-                currentSourceRef.current.stop();
-                currentSourceRef.current = null;
-                setIsModelSpeaking(false);
-              }
-
-              // Silence detection for visual feedback
-              if (volume > 0.02) {
-                lastActiveTimeRef.current = Date.now();
-                if (silenceTimerRef.current) {
-                  clearTimeout(silenceTimerRef.current);
-                  silenceTimerRef.current = null;
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              {
+                inlineData: {
+                  mimeType: 'audio/webm',
+                  data: base64Audio
                 }
-                if (isLoading) setIsLoading(false);
-              } else if (!isLoading && Date.now() - lastActiveTimeRef.current > 500) {
-                // If it's been silent for 0.5s, start a timer to show "Thinking"
-                if (!silenceTimerRef.current) {
-                  silenceTimerRef.current = setTimeout(() => {
-                    setIsLoading(true);
-                  }, silenceTimeout * 1000 - 500);
-                }
-              }
-
-              const pcmData = new Int16Array(inputData.length);
-              for (let i = 0; i < inputData.length; i++) {
-                pcmData[i] = Math.max(-32768, Math.min(32767, inputData[i] * 32768));
-              }
-
-              const buffer = new ArrayBuffer(pcmData.length * 2);
-              const view = new DataView(buffer);
-              for (let i = 0; i < pcmData.length; i++) {
-                view.setInt16(i * 2, pcmData[i], true);
-              }
-              const base64Data = btoa(String.fromCharCode(...new Uint8Array(buffer)));
-
-              sessionPromise.then((session) => {
-                session.sendRealtimeInput({
-                  audio: { data: base64Data, mimeType: 'audio/pcm;rate=16000' },
-                });
-              });
-            };
-          },
-          onmessage: async (message: LiveServerMessage) => {
-            if (message.serverContent?.modelTurn) {
-              setIsLoading(false);
-              if (silenceTimerRef.current) {
-                clearTimeout(silenceTimerRef.current);
-                silenceTimerRef.current = null;
-              }
-            }
-
-            const base64Audio = message.serverContent?.modelTurn?.parts[0]?.inlineData?.data;
-            if (base64Audio) {
-              setIsModelSpeaking(true);
-              const binaryString = atob(base64Audio);
-              const len = binaryString.length;
-              const bytes = new Uint8Array(len);
-              for (let i = 0; i < len; i++) {
-                bytes[i] = binaryString.charCodeAt(i);
-              }
-              
-              const audioCtx = getAudioContext();
-              
-              if (audioCtx.state === 'suspended') {
-                audioCtx.resume().catch(console.error);
-              }
-              
-              try {
-                // Try decoding as a standard container first
-                const audioBuffer = await new Promise<AudioBuffer>((resolveDecode, rejectDecode) => {
-                  const decodePromise = audioCtx.decodeAudioData(
-                    bytes.buffer.slice(0),
-                    (decoded) => resolveDecode(decoded),
-                    (err) => rejectDecode(err)
-                  );
-                  if (decodePromise) {
-                    decodePromise.catch(rejectDecode);
-                  }
-                });
-                const source = audioCtx.createBufferSource();
-                source.buffer = audioBuffer;
-                source.connect(audioCtx.destination);
-                currentSourceRef.current = source;
-                source.onended = () => {
-                  if (currentSourceRef.current === source) {
-                    currentSourceRef.current = null;
-                    setIsModelSpeaking(false);
-                  }
-                };
-                source.start();
-              } catch (e) {
-                // Fallback: Assume raw 16-bit Linear PCM (24kHz)
-                const pcmLength = Math.floor(len / 2);
-                const audioBuffer = audioCtx.createBuffer(1, pcmLength, 24000);
-                const channelData = audioBuffer.getChannelData(0);
-                const dataView = new DataView(bytes.buffer);
-                for (let i = 0; i < pcmLength; i++) {
-                  channelData[i] = dataView.getInt16(i * 2, true) / 32768.0;
-                }
-                const source = audioCtx.createBufferSource();
-                source.buffer = audioBuffer;
-                source.connect(audioCtx.destination);
-                currentSourceRef.current = source;
-                source.onended = () => {
-                  if (currentSourceRef.current === source) {
-                    currentSourceRef.current = null;
-                    setIsModelSpeaking(false);
-                  }
-                };
-                source.start();
-              }
-            }
-
-            if (message.toolCall && message.toolCall.functionCalls) {
-              for (const call of message.toolCall.functionCalls) {
-                if (call.name === 'showImage') {
-                  const imageId = call.args.imageId as string;
-                  const item = dbItemsRef.current.find(i => i.id === imageId && i.type === 'photo');
-                  
-                  if (item) {
-                    setDisplayedImage(item.content);
-                  }
-                  
-                  sessionPromise.then(session => {
-                    session.sendToolResponse({
-                      functionResponses: [{
-                        id: call.id,
-                        name: call.name,
-                        response: { result: item ? 'Imagem exibida com sucesso na tela do usuário.' : 'Imagem não encontrada.' }
-                      }]
-                    });
-                  });
-                }
-              }
-            }
-          },
-          onclose: () => {
-            stopVoiceSession();
-          },
-          onerror: (err) => {
-            console.error('Live API Error:', err);
-            stopVoiceSession();
+              },
+              { text: "Responda à mensagem de voz acima com base no contexto das memórias fornecidas." }
+            ]
           }
-        },
+        ],
+        config: {
+          systemInstruction: dbContextText || 'Você é o ExoMind.',
+          tools: tools.length > 0 ? tools : undefined,
+        }
       });
 
-      sessionRef.current = await sessionPromise;
+      const responseText = response.text || 'Desculpe, não consegui entender o áudio.';
+      const processed = processModelResponse(responseText);
+
+      setMessages(prev => [...prev, { 
+        id: Date.now().toString(), 
+        role: 'model', 
+        content: processed.text,
+        images: processed.images
+      }]);
+
+      // TTS response
+      let selectedVoice = localStorage.getItem('exo_voice_preference') || 'Zephyr';
+      const voiceRate = parseFloat(localStorage.getItem('exo_voice_rate') || '1.0');
+      await playTTS(processed.text, selectedVoice, voiceRate);
+      if (selectedVoice === 'uHxni9EgaoUr7MGw3Der') {
+        await incrementCacaVoiceUses();
+      }
 
     } catch (error) {
-      console.error('Error starting voice session:', error);
-      setIsConnecting(false);
+      console.error('Error processing voice input:', error);
+      playTTS('Desculpe, tive um problema ao processar seu áudio.', 'Zephyr', 1.0);
+    } finally {
+      setIsLoading(false);
+      setIsProcessing(false);
     }
-  };
-
-  const stopVoiceSession = () => {
-    if (silenceTimerRef.current) {
-      clearTimeout(silenceTimerRef.current);
-      silenceTimerRef.current = null;
-    }
-    if (currentSourceRef.current) {
-      currentSourceRef.current.stop();
-      currentSourceRef.current = null;
-    }
-    if (processorRef.current) {
-      processorRef.current.disconnect();
-      processorRef.current.onaudioprocess = null;
-    }
-    if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach(track => track.stop());
-    }
-    if (audioContextRef.current) {
-      audioContextRef.current.close();
-      audioContextRef.current = null;
-    }
-    if (sessionRef.current) {
-      try {
-        sessionRef.current.close();
-      } catch (e) {}
-    }
-    setIsRecording(false);
-    setIsConnecting(false);
   };
 
   useEffect(() => {
-    if (inputMode === 'voice') {
-      startVoiceSession();
-    }
     return () => {
-      stopVoiceSession();
+      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+      if (audioContextRef.current) audioContextRef.current.close();
+      if (mediaStreamRef.current) mediaStreamRef.current.getTracks().forEach(track => track.stop());
     };
-  }, [inputMode]);
+  }, []);
 
   return (
     <motion.div
@@ -544,32 +416,22 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
           </div>
         </>
       ) : (
-        <div className="flex-1 flex flex-col items-center justify-center p-6">
-          {displayedImage && (
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="mb-8 rounded-2xl overflow-hidden border-2 border-slate-700 bg-black max-w-sm shadow-2xl z-20"
-            >
-              <img src={displayedImage} alt="Imagem solicitada" className="w-full h-auto max-h-64 object-contain" />
-            </motion.div>
-          )}
-          
-          <div className="text-center mb-8">
-            <h3 className="text-xl font-bold text-white mb-2">
-              {isConnecting ? 'Conectando...' : isModelSpeaking ? 'ExoMind falando...' : isLoading ? 'Pensando...' : 'Estou ouvindo...'}
+        <div className="p-8 border-t border-slate-800 bg-slate-900/80 backdrop-blur-md flex flex-col items-center gap-6">
+          <div className="flex flex-col items-center gap-2">
+            <h3 className="text-lg font-bold text-white">
+              {isProcessing ? 'Processando...' : isRecording ? 'Gravando...' : 'Modo Voz'}
             </h3>
-            <p className="text-slate-400 text-sm">
-              {isModelSpeaking ? 'Aguarde o assistente terminar ou comece a falar para interromper.' : 'Fale naturalmente. O assistente responderá após sua pausa.'}
+            <p className="text-slate-400 text-sm text-center">
+              {isRecording ? 'Fale agora e clique em Enviar quando terminar.' : 'Clique no botão abaixo para começar a falar.'}
             </p>
           </div>
 
-          <div className="relative mb-12">
+          <div className="relative">
             {isRecording && (
               <motion.div 
                 animate={{ 
-                  scale: [1, 1.2 + userVolume * 2, 1],
-                  opacity: [0.2, 0.4 + userVolume, 0.2]
+                  scale: [1, 1.2 + audioLevel * 2, 1],
+                  opacity: [0.2, 0.4 + audioLevel, 0.2]
                 }}
                 transition={{ repeat: Infinity, duration: 1.5 }}
                 className="absolute inset-0 bg-emerald-500/20 rounded-full" 
@@ -577,20 +439,26 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
               />
             )}
             <button
-              onClick={isRecording ? stopVoiceSession : startVoiceSession}
-              disabled={isConnecting}
-              className={`relative z-10 w-32 h-32 rounded-full flex items-center justify-center transition-all shadow-2xl ${
+              onClick={isRecording ? stopRecording : startRecording}
+              disabled={isProcessing || isLoading}
+              className={`relative z-10 px-8 py-4 rounded-full flex items-center justify-center gap-3 transition-all shadow-2xl font-bold text-lg min-w-[200px] ${
                 isRecording 
-                  ? 'bg-red-500 hover:bg-red-600 scale-110' 
-                  : 'bg-emerald-600 hover:bg-emerald-700'
-              } ${isConnecting ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  ? 'bg-emerald-600 hover:bg-emerald-700 animate-pulse' 
+                  : 'bg-blue-600 hover:bg-blue-700'
+              } ${(isProcessing || isLoading) ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
-              {isConnecting ? (
-                <Loader2 size={48} className="text-white animate-spin" />
+              {isProcessing || isLoading ? (
+                <Loader2 size={24} className="text-white animate-spin" />
               ) : isRecording ? (
-                <MicOff size={48} className="text-white" />
+                <>
+                  <Send size={24} className="text-white" />
+                  <span>Enviar</span>
+                </>
               ) : (
-                <Mic size={48} className="text-white" />
+                <>
+                  <Mic size={24} className="text-white" />
+                  <span>Pressione para Falar</span>
+                </>
               )}
             </button>
           </div>
@@ -599,7 +467,7 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
             <div className="w-full max-w-xs bg-slate-800/50 rounded-full h-1.5 overflow-hidden border border-slate-700">
               <motion.div 
                 className="h-full bg-emerald-500"
-                animate={{ width: `${Math.min(100, userVolume * 500)}%` }}
+                animate={{ width: `${Math.min(100, audioLevel * 100)}%` }}
                 transition={{ type: 'spring', stiffness: 300, damping: 30 }}
               />
             </div>

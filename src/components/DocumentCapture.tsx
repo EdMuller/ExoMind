@@ -4,6 +4,8 @@ import { motion } from 'framer-motion';
 import { saveItem } from '../db';
 import { generateItemMetadata, analyzeForSchedule } from '../utils/aiMetadata';
 import { generateICS } from '../utils/calendar';
+import { getAI } from '../utils/ai';
+import { Mic } from 'lucide-react';
 
 interface Props {
   onSaved: () => void;
@@ -18,6 +20,116 @@ export function DocumentCapture({ onSaved, onCancel }: Props) {
   const [isSuccess, setIsSuccess] = useState(false);
   const [scheduleSuggestion, setScheduleSuggestion] = useState<any>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Voice state
+  const [isRecording, setIsRecording] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [audioLevel, setAudioLevel] = useState(0);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const animationFrameRef = useRef<number | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStreamRef.current = stream;
+      
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        await processVoiceInput(audioBlob);
+      };
+
+      // Set up audio visualization
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      audioContextRef.current = audioContext;
+      const source = audioContext.createMediaStreamSource(stream);
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 256;
+      analyserRef.current = analyser;
+      source.connect(analyser);
+
+      const updateLevel = () => {
+        const dataArray = new Uint8Array(analyser.frequencyBinCount);
+        analyser.getByteFrequencyData(dataArray);
+        const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+        setAudioLevel(average / 128);
+        animationFrameRef.current = requestAnimationFrame(updateLevel);
+      };
+      updateLevel();
+
+      mediaRecorder.start();
+      setIsRecording(true);
+    } catch (error) {
+      console.error('Error starting recording:', error);
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      setIsProcessing(true);
+      
+      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+      if (audioContextRef.current) audioContextRef.current.close();
+      if (mediaStreamRef.current) mediaStreamRef.current.getTracks().forEach(track => track.stop());
+    }
+  };
+
+  const processVoiceInput = async (audioBlob: Blob) => {
+    try {
+      const reader = new FileReader();
+      const base64Promise = new Promise<string>((resolve) => {
+        reader.onloadend = () => {
+          const base64String = (reader.result as string).split(',')[1];
+          resolve(base64String);
+        };
+      });
+      reader.readAsDataURL(audioBlob);
+      const base64Audio = await base64Promise;
+
+      const ai = getAI();
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              {
+                inlineData: {
+                  mimeType: 'audio/webm',
+                  data: base64Audio
+                }
+              },
+              { text: "Transcreva exatamente o que foi dito no áudio acima. Retorne apenas a transcrição, sem comentários." }
+            ]
+          }
+        ]
+      });
+
+      const transcription = response.text || '';
+      if (transcription) {
+        setDescription(prev => prev + (prev ? ' ' : '') + transcription.trim());
+      }
+    } catch (error) {
+      console.error('Error processing voice input:', error);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
 
   const handleCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -185,12 +297,33 @@ export function DocumentCapture({ onSaved, onCancel }: Props) {
             </div>
 
             <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium text-slate-300">Descrição / Critérios</label>
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium text-slate-300">Descrição / Critérios</label>
+                <div className="flex items-center gap-2">
+                  {isRecording && (
+                    <div className="w-24 bg-slate-900 rounded-full h-1 overflow-hidden">
+                      <motion.div 
+                        className="h-full bg-emerald-500"
+                        animate={{ width: `${Math.min(100, audioLevel * 100)}%` }}
+                      />
+                    </div>
+                  )}
+                  <button
+                    onClick={isRecording ? stopRecording : startRecording}
+                    disabled={isProcessing}
+                    className={`p-2 rounded-full transition-colors ${
+                      isRecording ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {isProcessing ? <Loader2 size={18} className="animate-spin" /> : <Mic size={18} />}
+                  </button>
+                </div>
+              </div>
               <textarea
                 autoFocus
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="Ex: Recibo do almoço de negócios, CNH, etc..."
+                placeholder={isRecording ? 'Ouvindo...' : "Ex: Recibo do almoço de negócios, CNH, etc..."}
                 className="w-full bg-slate-800 border border-slate-700 rounded-xl p-4 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 resize-none h-32"
               />
             </div>
