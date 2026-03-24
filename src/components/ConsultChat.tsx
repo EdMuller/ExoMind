@@ -128,9 +128,21 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
         tools.push({ googleSearch: {} });
       }
 
+      // Construir o histórico para o modelo (limitar às últimas 10 mensagens para contexto)
+      const history = messages.slice(-10).map(msg => ({
+        role: msg.role,
+        parts: [{ text: msg.content }]
+      }));
+
+      // Adicionar a mensagem atual do usuário
+      const contents = [
+        ...history,
+        { role: 'user' as const, parts: [{ text: userMsg }] }
+      ];
+
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: userMsg,
+        contents: contents,
         config: {
           systemInstruction: dbContextText || 'Você é o ExoMind.',
           tools: tools.length > 0 ? tools : undefined,
