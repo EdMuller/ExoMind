@@ -2,21 +2,28 @@ import React, { useState, useRef } from 'react';
 import { Camera, Save, X, Image as ImageIcon, Loader2, CheckCircle2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { saveItem } from '../db';
-import { generateItemMetadata, analyzeForSchedule } from '../utils/aiMetadata';
+import { generateItemMetadata, analyzeForSchedule, analyzePhoto } from '../utils/aiMetadata';
 import { generateICS } from '../utils/calendar';
 import { getAI } from '../utils/ai';
-import { Mic } from 'lucide-react';
+import { Mic, Sparkles, Lock } from 'lucide-react';
+import { useAuth } from '../AuthContext';
+import { CREDIT_COSTS } from '../constants/costs';
 
 interface Props {
+  inputMode: 'text' | 'voice';
+  folderId: string;
   onSaved: () => void;
   onCancel?: () => void;
 }
 
-export function DocumentCapture({ onSaved, onCancel }: Props) {
+export function DocumentCapture({ inputMode, folderId, onSaved, onCancel }: Props) {
+  const { plan, spendCredits } = useAuth();
   const [photo, setPhoto] = useState<string | null>(null);
+  const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isAnalyzingPhoto, setIsAnalyzingPhoto] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [scheduleSuggestion, setScheduleSuggestion] = useState<any>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -182,6 +189,26 @@ export function DocumentCapture({ onSaved, onCancel }: Props) {
     }
   };
 
+  const handleAnalyzePhoto = async () => {
+    if (!photo) return;
+
+    // Spend credits for AI Image Analysis
+    const success = await spendCredits(CREDIT_COSTS.AI_IMAGE_ANALYSIS, 'Análise de Imagem por IA');
+    if (!success) return;
+
+    setIsAnalyzingPhoto(true);
+    try {
+      const description = await analyzePhoto(photo);
+      if (description) {
+        setDescription(description);
+      }
+    } catch (error) {
+      console.error('Error analyzing photo:', error);
+    } finally {
+      setIsAnalyzingPhoto(false);
+    }
+  };
+
   const handleSave = async () => {
     if (!photo) return;
     setIsAnalyzing(true);
@@ -202,6 +229,10 @@ export function DocumentCapture({ onSaved, onCancel }: Props) {
   };
 
   const proceedSaving = async (type: 'photo' | 'schedule', scheduleData?: any) => {
+    // Spend credits for saving photo/document
+    const success = await spendCredits(CREDIT_COSTS.FILE_UPLOAD, `Salvar ${type === 'schedule' ? 'Agendamento' : 'Documento'}`);
+    if (!success) return;
+
     setIsSaving(true);
     setScheduleSuggestion(null);
     try {
@@ -217,6 +248,7 @@ export function DocumentCapture({ onSaved, onCancel }: Props) {
           type: 'schedule',
           content: description || 'Foto com agendamento',
           timestamp: Date.now() + 1,
+          folderId,
           metadata: {
             type: 'schedule',
             title: scheduleData.title || 'Compromisso sem título',
@@ -233,17 +265,22 @@ export function DocumentCapture({ onSaved, onCancel }: Props) {
       }
 
       const metadata = await generateItemMetadata(description || 'Foto sem descrição', 'photo');
+      const finalTitle = title.trim() || metadata?.title || 'Documento sem título';
+      const finalSummary = description.trim() || metadata?.summary || '';
       
       await saveItem({
         id: photoId,
         type: 'photo',
         content: photo,
         timestamp: Date.now(),
+        folderId,
+        title: finalTitle,
+        summary: finalSummary,
         metadata: { 
           description: description.trim(),
           type: 'photo',
-          title: metadata?.title || 'Documento sem título',
-          summary: metadata?.summary || '',
+          title: finalTitle,
+          summary: finalSummary,
           ...(scheduleId ? { linkedScheduleId: scheduleId } : {})
         }
       });
@@ -327,69 +364,94 @@ export function DocumentCapture({ onSaved, onCancel }: Props) {
             </div>
 
             <div className="flex flex-col gap-4">
-              <div className="flex flex-col items-center gap-4">
-                <div className="relative">
-                  {isRecording && (
-                    <motion.div 
-                      animate={{ 
-                        scale: [1, 1.2 + audioLevel * 2, 1],
-                        opacity: [0.2, 0.4 + audioLevel, 0.2]
-                      }}
-                      transition={{ repeat: Infinity, duration: 1.5 }}
-                      className="absolute inset-0 bg-emerald-500/20 rounded-full" 
-                      style={{ transform: 'scale(1.5)' }} 
-                    />
-                  )}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="flex flex-col items-center gap-2">
+                  <div className="relative">
+                    {isRecording && (
+                      <motion.div 
+                        animate={{ 
+                          scale: [1, 1.2 + audioLevel * 2, 1],
+                          opacity: [0.2, 0.4 + audioLevel, 0.2]
+                        }}
+                        transition={{ repeat: Infinity, duration: 1.5 }}
+                        className="absolute inset-0 bg-emerald-500/20 rounded-full" 
+                        style={{ transform: 'scale(1.5)' }} 
+                      />
+                    )}
+                    <button
+                      onClick={isRecording ? stopRecording : startRecording}
+                      disabled={isProcessing || isAnalyzingPhoto}
+                      className={`relative z-10 w-16 h-16 rounded-full flex items-center justify-center transition-all shadow-lg ${
+                        isRecording 
+                          ? 'bg-emerald-600 hover:bg-emerald-700 animate-pulse' 
+                          : 'bg-blue-600 hover:bg-blue-700'
+                      } ${isProcessing || isAnalyzingPhoto ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    >
+                      {isProcessing ? (
+                        <Loader2 size={24} className="text-white animate-spin" />
+                      ) : (
+                        <Mic size={24} className="text-white" />
+                      )}
+                    </button>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-white font-bold text-[10px]">
+                      {isRecording ? 'Gravando...' : 'Descrever Voz'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-col items-center gap-2">
                   <button
-                    onClick={isRecording ? stopRecording : startRecording}
-                    disabled={isProcessing}
-                    className={`relative z-10 w-20 h-20 rounded-full flex items-center justify-center transition-all shadow-lg ${
-                      isRecording 
-                        ? 'bg-emerald-600 hover:bg-emerald-700 animate-pulse' 
-                        : 'bg-blue-600 hover:bg-blue-700'
-                    } ${isProcessing ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    onClick={handleAnalyzePhoto}
+                    disabled={isAnalyzingPhoto || isProcessing || plan !== 'Diamante'}
+                    className={`w-16 h-16 rounded-full flex items-center justify-center transition-all shadow-lg ${
+                      plan !== 'Diamante'
+                        ? 'bg-slate-800 text-slate-600 cursor-not-allowed border border-slate-700'
+                        : isAnalyzingPhoto 
+                          ? 'bg-purple-600/50 cursor-not-allowed' 
+                          : 'bg-purple-600 hover:bg-purple-700'
+                    }`}
                   >
-                    {isProcessing ? (
+                    {isAnalyzingPhoto ? (
                       <Loader2 size={24} className="text-white animate-spin" />
-                    ) : isRecording ? (
-                      <Mic size={24} className="text-white" />
+                    ) : plan !== 'Diamante' ? (
+                      <Lock size={24} />
                     ) : (
-                      <Mic size={24} className="text-white" />
+                      <Sparkles size={24} className="text-white" />
                     )}
                   </button>
-                </div>
-                
-                <div className="text-center">
-                  <p className="text-white font-bold text-sm">
-                    {isRecording ? 'Gravando...' : isProcessing ? 'Processando...' : 'Pressione para Falar'}
-                  </p>
-                  <p className="text-slate-400 text-[10px]">
-                    {isRecording ? 'Clique no botão para Enviar' : 'Descreva o documento por voz'}
-                  </p>
-                </div>
-
-                {isRecording && (
-                  <div className="w-full max-w-[150px] bg-slate-900 rounded-full h-1 overflow-hidden border border-slate-700">
-                    <motion.div 
-                      className="h-full bg-emerald-500"
-                      animate={{ width: `${Math.min(100, audioLevel * 100)}%` }}
-                      transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-                    />
+                  <div className="text-center">
+                    <p className={`font-bold text-[10px] ${plan !== 'Diamante' ? 'text-slate-600' : 'text-white'}`}>
+                      {isAnalyzingPhoto ? 'Analisando...' : 'Analisar Foto'}
+                    </p>
+                    {plan !== 'Diamante' && (
+                      <p className="text-[8px] text-amber-500 font-bold uppercase tracking-tighter">Exclusivo Diamante</p>
+                    )}
                   </div>
-                )}
+                </div>
               </div>
 
-              {(description || isProcessing) && (
-                <div className="flex flex-col gap-2">
-                  <label className="text-sm font-medium text-slate-400">Descrição</label>
-                  <textarea
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    placeholder="A transcrição aparecerá aqui..."
-                    className="w-full bg-slate-800 border border-slate-700 rounded-xl p-4 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 resize-none h-24"
-                  />
-                </div>
-              )}
+              <div className="flex flex-col gap-2">
+                <label className="text-sm font-medium text-slate-400">Título (Opcional)</label>
+                <input
+                  type="text"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="Dê um nome para este documento..."
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl p-4 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
+                />
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <label className="text-sm font-medium text-slate-400">Descrição / Resumo</label>
+                <textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="A transcrição ou análise aparecerá aqui..."
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl p-4 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 resize-none h-24"
+                />
+              </div>
             </div>
 
             <button

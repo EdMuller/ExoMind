@@ -130,12 +130,16 @@ export function VipModal({ isOpen, onClose }: VipModalProps) {
                   <span className="text-white">Cacá Voice Ilimitada</span>
                 </li>
                 <li className="flex items-center gap-2">
-                  <CheckCircle2 size={16} className="text-slate-500" />
-                  <span>Relatórios Diários (Em breve)</span>
+                  <CheckCircle2 size={16} className="text-amber-400" />
+                  <span className="text-white">Análise de Fotos por IA</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <CheckCircle2 size={16} className="text-amber-400" />
+                  <span className="text-white">Suporte Prioritário VIP</span>
                 </li>
                 <li className="flex items-center gap-2">
                   <CheckCircle2 size={16} className="text-slate-500" />
-                  <span>Exportação em PDF (Em breve)</span>
+                  <span>Relatórios Diários (Em breve)</span>
                 </li>
               </ul>
             </div>

@@ -1,0 +1,12 @@
+export const CREDIT_COSTS = {
+  AI_CONSULT: 5,
+  AI_IMAGE_ANALYSIS: 10,
+  AI_AUDIO_TRANSCRIPTION: 5,
+  AI_VIDEO_MONTAGE: 50,
+  CACA_VOICE_TTS: 15,
+  LOCATION_SAVE: 1,
+  NOTE_SAVE: 1,
+  FILE_UPLOAD: 2,
+};
+
+export type CreditAction = keyof typeof CREDIT_COSTS;

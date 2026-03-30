@@ -1,30 +1,95 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User, onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, collection, addDoc } from 'firebase/firestore';
 import { auth, db } from './firebase';
+import { APP_VERSION } from './constants';
 
 interface AuthContextType {
   user: User | null;
   loading: boolean;
   signIn: () => Promise<void>;
   logOut: () => Promise<void>;
-  cacaVoiceUses: number;
-  incrementCacaVoiceUses: () => Promise<void>;
   isVip: boolean;
   plan: 'Bronze' | 'Prata' | 'Ouro' | 'Diamante';
+  role: 'admin' | 'user';
   unlockVip: (code: string) => Promise<boolean>;
+  maintenanceMode: boolean;
+  forceUpdate: boolean;
+  publishedVersion: string;
+  betaMode: boolean;
+  supportWhatsapp: string;
+  defaultCredits: number;
+  googleDriveConnected: boolean;
+  googleAccessToken: string | null;
+  syncingToDrive: boolean;
+  syncProgress: { current: number; total: number } | null;
+  lastSyncTime: string | null;
+  credits: number;
+  spendCredits: (amount: number, description: string) => Promise<boolean>;
+  connectGoogleDrive: () => Promise<void>;
+  syncAllToGoogleDrive: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
-const APP_VERSION = '1.1.4';
-
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [cacaVoiceUses, setCacaVoiceUses] = useState(0);
   const [isVip, setIsVip] = useState(false);
   const [plan, setPlan] = useState<'Bronze' | 'Prata' | 'Ouro' | 'Diamante'>('Bronze');
+  const [role, setRole] = useState<'admin' | 'user'>('user');
+  const [maintenanceMode, setMaintenanceMode] = useState(false);
+  const [forceUpdate, setForceUpdate] = useState(false);
+  const [publishedVersion, setPublishedVersion] = useState(APP_VERSION);
+  const [betaMode, setBetaMode] = useState(false);
+  const [supportWhatsapp, setSupportWhatsapp] = useState('5511999999999');
+  const [defaultCredits, setDefaultCredits] = useState(50);
+  const [credits, setCredits] = useState(0);
+  const [googleDriveConnected, setGoogleDriveConnected] = useState(false);
+  const [googleAccessToken, setGoogleAccessToken] = useState<string | null>(null);
+  const [syncingToDrive, setSyncingToDrive] = useState(false);
+  const [syncProgress, setSyncProgress] = useState<{ current: number; total: number } | null>(null);
+  const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
+
+  useEffect(() => {
+    const savedToken = localStorage.getItem('google_drive_token');
+    const tokenExpiry = localStorage.getItem('google_drive_token_expiry');
+    const savedLastSync = localStorage.getItem('google_drive_last_sync');
+    
+    if (savedLastSync) {
+      setLastSyncTime(savedLastSync);
+    }
+    
+    if (savedToken && tokenExpiry && Date.now() < parseInt(tokenExpiry)) {
+      setGoogleAccessToken(savedToken);
+      setGoogleDriveConnected(true);
+      import('./services/googleDrive').then(({ googleDriveService }) => {
+        googleDriveService.setAccessToken(savedToken);
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    // Check for maintenance mode and updates
+    const checkAppConfig = async () => {
+      try {
+        const configDoc = await getDoc(doc(db, 'config', 'app_config'));
+        if (configDoc.exists()) {
+          const data = configDoc.data();
+          setMaintenanceMode(data.maintenanceMode || false);
+          setForceUpdate(data.forceUpdate || false);
+          setPublishedVersion(data.currentVersion || APP_VERSION);
+          setBetaMode(data.betaMode || false);
+          setSupportWhatsapp(data.supportWhatsapp || '5511999999999');
+          setDefaultCredits(data.defaultCredits || 50);
+        }
+      } catch (error) {
+        console.error('Error checking app config:', error);
+      }
+    };
+
+    checkAppConfig();
+  }, []);
 
   useEffect(() => {
     const checkVersionAndAuth = async () => {
@@ -51,6 +116,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const userRef = doc(db, 'users', currentUser.uid);
           const userSnap = await getDoc(userRef);
           
+          // Fetch config for default credits if user is new
+          let currentDefaultCredits = defaultCredits;
+          if (!userSnap.exists()) {
+            const configDoc = await getDoc(doc(db, 'config', 'app_config'));
+            if (configDoc.exists()) {
+              currentDefaultCredits = configDoc.data().defaultCredits || 50;
+            }
+          }
+
           let userData: any;
           if (!userSnap.exists()) {
             userData = {
@@ -58,31 +132,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               email: currentUser.email,
               displayName: currentUser.displayName,
               photoURL: currentUser.photoURL,
-              cacaVoiceUses: 0,
               isVip: currentUser.email === 'empresarioholistico@gmail.com', // Auto-VIP for the user
-              plan: currentUser.email === 'empresarioholistico@gmail.com' ? 'Diamante' : 'Bronze'
+              plan: currentUser.email === 'empresarioholistico@gmail.com' ? 'Diamante' : 'Bronze',
+              role: currentUser.email === 'empresarioholistico@gmail.com' ? 'admin' : 'user',
+              credits: currentDefaultCredits,
+              totalSpent: 0,
+              totalProfit: 0,
+              subscriptionDate: Date.now()
             };
             await setDoc(userRef, userData);
           } else {
             userData = userSnap.data();
             // Ensure the user is always VIP if they are the owner
-            if (currentUser.email === 'empresarioholistico@gmail.com' && (!userData.isVip || userData.plan !== 'Diamante')) {
+            if (currentUser.email === 'empresarioholistico@gmail.com' && (!userData.isVip || userData.plan !== 'Diamante' || userData.role !== 'admin')) {
               userData.isVip = true;
               userData.plan = 'Diamante';
-              await setDoc(userRef, { isVip: true, plan: 'Diamante' }, { merge: true });
+              userData.role = 'admin';
+              await setDoc(userRef, { isVip: true, plan: 'Diamante', role: 'admin' }, { merge: true });
             }
           }
 
-          // Development Reset Logic (requested by user)
-          if (localStorage.getItem('caca_voice_reset_done') !== 'true') {
-            userData.cacaVoiceUses = 0;
-            await setDoc(userRef, { cacaVoiceUses: 0 }, { merge: true });
-            localStorage.setItem('caca_voice_reset_done', 'true');
-          }
-
-          setCacaVoiceUses(userData.cacaVoiceUses || 0);
           setIsVip(userData.isVip || false);
           setPlan(userData.plan || 'Bronze');
+          setRole(userData.role || 'user');
+          setCredits(userData.credits || 0);
         }
         setLoading(false);
       });
@@ -114,17 +187,76 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logOut = async () => {
     sessionStorage.removeItem('birthdayShown');
+    localStorage.removeItem('google_drive_token');
+    localStorage.removeItem('google_drive_token_expiry');
+    setGoogleAccessToken(null);
+    setGoogleDriveConnected(false);
     await signOut(auth);
   };
 
-  const incrementCacaVoiceUses = async () => {
-    if (!user || isVip) return; // VIPs have unlimited uses
-    const newUses = cacaVoiceUses + 1;
-    if (newUses > 10) return;
-    
-    const userRef = doc(db, 'users', user.uid);
-    await setDoc(userRef, { cacaVoiceUses: newUses }, { merge: true });
-    setCacaVoiceUses(newUses);
+  const connectGoogleDrive = async () => {
+    try {
+      const provider = new GoogleAuthProvider();
+      provider.addScope('https://www.googleapis.com/auth/drive.file');
+      
+      const result = await signInWithPopup(auth, provider);
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      
+      if (credential?.accessToken) {
+        const token = credential.accessToken;
+        const expiry = Date.now() + 3500 * 1000; // ~1 hour
+        
+        setGoogleAccessToken(token);
+        setGoogleDriveConnected(true);
+        localStorage.setItem('google_drive_token', token);
+        localStorage.setItem('google_drive_token_expiry', expiry.toString());
+        
+        const { googleDriveService } = await import('./services/googleDrive');
+        googleDriveService.setAccessToken(token);
+        
+        // Trigger initial sync
+        await syncAllToGoogleDrive();
+        
+        alert('Google Drive conectado e sincronizado com sucesso!');
+      }
+    } catch (error: any) {
+      console.error('Error connecting to Google Drive:', error);
+      alert('Erro ao conectar ao Google Drive: ' + error.message);
+    } finally {
+      setSyncingToDrive(false);
+    }
+  };
+
+  const syncAllToGoogleDrive = async () => {
+    const token = localStorage.getItem('google_drive_token');
+    if (!token || !user) return;
+
+    try {
+      setSyncingToDrive(true);
+      const { googleDriveService } = await import('./services/googleDrive');
+      const { localDb, syncItemToCloud } = await import('./db');
+      
+      googleDriveService.setAccessToken(token);
+      
+      const items = await localDb.items.where('userId').equals(user.uid).toArray();
+      setSyncProgress({ current: 0, total: items.length });
+
+      for (let i = 0; i < items.length; i++) {
+        setSyncProgress({ current: i + 1, total: items.length });
+        await syncItemToCloud(items[i]);
+      }
+      
+      const now = new Date().toISOString();
+      setLastSyncTime(now);
+      localStorage.setItem('google_drive_last_sync', now);
+      
+      console.log('All items synced to Google Drive');
+    } catch (error) {
+      console.error('Error syncing all to Drive:', error);
+    } finally {
+      setSyncingToDrive(false);
+      setSyncProgress(null);
+    }
   };
 
   const unlockVip = async (code: string) => {
@@ -132,9 +264,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const normalizedCode = code.trim().toUpperCase();
     if (normalizedCode === 'CACÁ61' || normalizedCode === 'CACA61') {
       const userRef = doc(db, 'users', user.uid);
-      await setDoc(userRef, { isVip: true, plan: 'Diamante' }, { merge: true });
+      await setDoc(userRef, { isVip: true, plan: 'Diamante', credits: 999999 }, { merge: true });
       setIsVip(true);
       setPlan('Diamante');
+      setCredits(999999);
       sessionStorage.setItem('justUnlockedVip', 'true');
       window.dispatchEvent(new Event('vipUnlocked'));
       return true;
@@ -142,8 +275,65 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return false;
   };
 
+  const spendCredits = async (amount: number, description: string) => {
+    if (!user) return false;
+    if (isVip) return true; // VIPs don't spend credits
+    
+    if (credits < amount) {
+      alert(`Créditos insuficientes. Você precisa de ${amount} créditos para esta ação.`);
+      return false;
+    }
+
+    try {
+      const newCredits = credits - amount;
+      const userRef = doc(db, 'users', user.uid);
+      
+      // Update credits
+      await setDoc(userRef, { credits: newCredits }, { merge: true });
+      
+      // Log transaction
+      const transactionRef = collection(db, 'users', user.uid, 'transactions');
+      await addDoc(transactionRef, {
+        amount: -amount,
+        description,
+        timestamp: Date.now(),
+        type: 'usage'
+      });
+
+      setCredits(newCredits);
+      return true;
+    } catch (error) {
+      console.error('Error spending credits:', error);
+      return false;
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ user, loading, signIn, logOut, cacaVoiceUses, incrementCacaVoiceUses, isVip, plan, unlockVip }}>
+    <AuthContext.Provider value={{ 
+      user, 
+      loading, 
+      signIn, 
+      logOut, 
+      isVip, 
+      plan, 
+      role, 
+      unlockVip,
+      maintenanceMode,
+      forceUpdate,
+      publishedVersion,
+      betaMode,
+      supportWhatsapp,
+      defaultCredits,
+      googleDriveConnected,
+      connectGoogleDrive,
+      syncAllToGoogleDrive,
+      googleAccessToken,
+      syncingToDrive,
+      syncProgress,
+      lastSyncTime,
+      credits,
+      spendCredits
+    }}>
       {children}
     </AuthContext.Provider>
   );

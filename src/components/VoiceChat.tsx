@@ -5,8 +5,11 @@ import { LiveServerMessage, Modality } from '@google/genai';
 import { getAI } from '../utils/ai';
 import { AudioVisualizer } from './AudioVisualizer';
 import { initAudio, getAudioContext } from '../utils/tts';
+import { useAuth } from '../AuthContext';
+import { CREDIT_COSTS } from '../constants/costs';
 
 export function VoiceChat() {
+  const { spendCredits } = useAuth();
   const [isRecording, setIsRecording] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [statusText, setStatusText] = useState('Toque para iniciar');
@@ -17,6 +20,10 @@ export function VoiceChat() {
   const processorRef = useRef<ScriptProcessorNode | null>(null);
 
   const startSession = async () => {
+    // Spend credits for starting a voice session
+    const success = await spendCredits(CREDIT_COSTS.AI_CONSULT, 'Conversa por Voz (Sessão)');
+    if (!success) return;
+
     setIsConnecting(true);
     setStatusText('Conectando...');
     initAudio();

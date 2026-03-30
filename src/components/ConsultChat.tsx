@@ -7,10 +7,12 @@ import { getAI } from '../utils/ai';
 import { getItems } from '../db';
 import { playTTS, initAudio, getAudioContext } from '../utils/tts';
 import { useAuth } from '../AuthContext';
+import { CREDIT_COSTS } from '../constants/costs';
 
 interface ConsultChatProps {
   inputMode: 'text' | 'voice';
-  onClose: () => void;
+  folderId: string;
+  onCancel: () => void;
 }
 
 interface Message {
@@ -20,8 +22,8 @@ interface Message {
   images?: string[];
 }
 
-export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
-  const { cacaVoiceUses, incrementCacaVoiceUses } = useAuth();
+export function ConsultChat({ inputMode, folderId, onCancel }: ConsultChatProps) {
+  const { spendCredits } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -50,13 +52,13 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
         const userName = localStorage.getItem('userName') || 'Usuário';
         const customInstructions = localStorage.getItem('customAiInstructions') || '';
 
-        const items = await getItems();
+        const items = await getItems(folderId);
         setDbItems(items);
         dbItemsRef.current = items;
         const contextString = items.map(item => {
           const date = new Date(item.timestamp).toLocaleString('pt-BR');
           let content = item.content;
-          if (item.type === 'location') {
+          if (item.type === 'location' && typeof item.content === 'string') {
             try {
               const loc = JSON.parse(item.content);
               content = `Latitude: ${loc.lat}, Longitude: ${loc.lng}`;
@@ -77,7 +79,7 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
       }
     };
     loadContext();
-  }, []);
+  }, [folderId]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -111,6 +113,11 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
     initAudio(); // Initialize audio context on user interaction
 
     const userMsg = input.trim();
+    
+    // Spend credits for AI Consult
+    const success = await spendCredits(CREDIT_COSTS.AI_CONSULT, 'Consulta de Memória (Texto)');
+    if (!success) return;
+
     setInput('');
     setMessages(prev => [...prev, { id: Date.now().toString(), role: 'user', content: userMsg }]);
     setIsLoading(true);
@@ -118,8 +125,10 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
     let selectedVoice = localStorage.getItem('exo_voice_preference') || 'Zephyr';
     const voiceRate = parseFloat(localStorage.getItem('exo_voice_rate') || '1.0');
     const webSearchEnabled = localStorage.getItem('exo_web_search') === 'true';
-    if (selectedVoice === 'uHxni9EgaoUr7MGw3Der' && cacaVoiceUses >= 10) {
-      selectedVoice = 'Zephyr'; // Fallback if limit reached
+    
+    // Fallback for deprecated voices
+    if (selectedVoice === 'uHxni9EgaoUr7MGw3Der' || selectedVoice === 'personal_voice') {
+      selectedVoice = 'Zephyr';
     }
     
     // Feedback de áudio suave (processando) - removido a pedido do usuário
@@ -166,9 +175,6 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
       // Ler a resposta em voz alta - Apenas se o modo de entrada for voz
       if (inputMode === 'voice') {
         await playTTS(processed.text, selectedVoice, voiceRate);
-        if (selectedVoice === 'uHxni9EgaoUr7MGw3Der') {
-          await incrementCacaVoiceUses();
-        }
       }
     } catch (error: any) {
       console.error('Error generating response:', error);
@@ -177,7 +183,7 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
         role: 'model', 
         content: error?.message || 'Ocorreu um erro ao processar sua solicitação.' 
       }]);
-      playTTS('Ocorreu um erro ao processar sua solicitação.', selectedVoice === 'uHxni9EgaoUr7MGw3Der' ? 'Zephyr' : selectedVoice, voiceRate);
+      playTTS('Ocorreu um erro ao processar sua solicitação.', (selectedVoice === 'uHxni9EgaoUr7MGw3Der' || selectedVoice === 'personal_voice') ? 'Zephyr' : selectedVoice, voiceRate);
     } finally {
       setIsLoading(false);
     }
@@ -260,6 +266,14 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
       reader.readAsDataURL(audioBlob);
       const base64Audio = await base64Promise;
 
+      // Spend credits for AI Consult (Voice)
+      const success = await spendCredits(CREDIT_COSTS.AI_CONSULT, 'Consulta de Memória (Voz)');
+      if (!success) {
+        setIsLoading(false);
+        setIsProcessing(false);
+        return;
+      }
+
       const ai = getAI();
       const webSearchEnabled = localStorage.getItem('exo_web_search') === 'true';
       const tools: any[] = [];
@@ -305,10 +319,13 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
       // TTS response
       let selectedVoice = localStorage.getItem('exo_voice_preference') || 'Zephyr';
       const voiceRate = parseFloat(localStorage.getItem('exo_voice_rate') || '1.0');
-      await playTTS(processed.text, selectedVoice, voiceRate);
-      if (selectedVoice === 'uHxni9EgaoUr7MGw3Der') {
-        await incrementCacaVoiceUses();
+      
+      // Fallback for deprecated voices
+      if (selectedVoice === 'uHxni9EgaoUr7MGw3Der' || selectedVoice === 'personal_voice') {
+        selectedVoice = 'Zephyr';
       }
+      
+      await playTTS(processed.text, selectedVoice, voiceRate);
 
     } catch (error) {
       console.error('Error processing voice input:', error);
@@ -336,7 +353,7 @@ export function ConsultChat({ inputMode, onClose }: ConsultChatProps) {
     >
       <header className="p-4 border-b border-slate-800 flex items-center justify-between glass-panel sticky top-0 z-10">
         <h2 className="text-xl font-semibold text-white">Consultar Memória</h2>
-        <button onClick={onClose} className="p-2 hover:bg-slate-800 rounded-full transition-colors text-slate-400 hover:text-white">
+        <button onClick={onCancel} className="p-2 hover:bg-slate-800 rounded-full transition-colors text-slate-400 hover:text-white">
           <X size={20} />
         </button>
       </header>

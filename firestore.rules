@@ -23,7 +23,33 @@ service cloud.firestore {
     //   - type: string (required) - 'text', 'audio', 'video', 'photo', 'location', or 'schedule'
     //   - content: string (required) - Content or base64 data
     //   - summary: string (optional) - AI generated summary
+    //   - folderId: string (required) - Folder ID
+    //   - timestamp: number (required) - Unix timestamp
+    //   - mediaUrl: string (optional) - Storage URL
     //   - createdAt: timestamp (required, immutable) - Creation time
+    //
+    // Collection: users/{userId}/folders
+    // Document ID: {folderId}
+    // Fields:
+    //   - id: string (required, immutable) - Folder ID
+    //   - name: string (required) - Folder name
+    //   - parentId: string (optional) - Parent folder ID
+    //   - userId: string (required) - Owner ID
+    //   - timestamp: number (required) - Unix timestamp
+    //   - createdAt: timestamp (required, immutable) - Creation time
+    //
+    // Collection: messages
+    // Document ID: {messageId}
+    // Fields:
+    //   - id: string (required, immutable) - Message ID
+    //   - senderId: string (required) - Sender UID
+    //   - receiverId: string (required) - Receiver UID
+    //   - content: string (required) - Message content
+    //   - type: string (required) - 'text', 'photo', 'audio', 'video'
+    //   - mediaUrl: string (optional) - Storage URL
+    //   - timestamp: number (required) - Unix timestamp
+    //   - scheduledAt: number (optional) - Unix timestamp for delivery
+    //   - status: string (required) - 'pending', 'sent', 'read'
     //
     // ===============================================================
 
@@ -33,6 +59,12 @@ service cloud.firestore {
     
     function isAuthenticated() {
       return request.auth != null;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "empresarioholistico@gmail.com" && request.auth.token.email_verified == true));
     }
     
     function isOwner(userId) {
@@ -64,23 +96,65 @@ service cloud.firestore {
     // ===============================================================
 
     function isValidUser(data) {
-      return hasRequiredFields(['uid', 'email', 'cacaVoiceUses']) &&
+      return hasRequiredFields(['uid', 'email', 'role', 'plan', 'credits']) &&
              data.uid is string && data.uid.size() > 0 && data.uid.size() < 100 &&
              data.email is string && isValidEmail(data.email) && data.email.size() < 255 &&
              (!('displayName' in data) || (data.displayName is string && data.displayName.size() < 100)) &&
              (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() < 1000)) &&
-             data.cacaVoiceUses is number && data.cacaVoiceUses >= 0 && data.cacaVoiceUses <= 5;
+             data.role in ['admin', 'user'] &&
+             data.plan in ['Bronze', 'Prata', 'Ouro', 'Diamante'] &&
+             data.credits is number && data.credits >= 0 &&
+             (!('totalSpent' in data) || data.totalSpent is number) &&
+             (!('totalProfit' in data) || data.totalProfit is number) &&
+             (!('subscriptionDate' in data) || data.subscriptionDate is number) &&
+             (!('whatsapp' in data) || (data.whatsapp is string && data.whatsapp.size() < 20)) &&
+             (!('cacaVoiceUses' in data) || (data.cacaVoiceUses is number && data.cacaVoiceUses >= 0));
+    }
+
+    function isValidCoupon(data) {
+      return hasRequiredFields(['code', 'type', 'value', 'active']) &&
+             data.code is string && data.code.size() > 0 &&
+             data.type in ['credits', 'plan_upgrade', 'time_extension'] &&
+             data.value is number && data.value >= 0 &&
+             data.active is bool &&
+             (!('benefit' in data) || data.benefit is string) &&
+             (!('expiresAt' in data) || data.expiresAt is number);
     }
 
     function isValidItem(data) {
-      return hasRequiredFields(['id', 'type', 'content', 'createdAt']) &&
+      return hasRequiredFields(['id', 'type', 'content', 'createdAt', 'folderId', 'timestamp']) &&
              data.id is string && data.id.size() > 0 && data.id.size() < 100 &&
              data.type in ['text', 'audio', 'video', 'photo', 'location', 'schedule'] &&
              data.content is string && data.content.size() < 5000000 && // 5MB limit
              (!('summary' in data) || (data.summary is string && data.summary.size() < 10000)) &&
              (!('metadata' in data) || data.metadata is map || data.metadata == null) &&
-             (!('timestamp' in data) || data.timestamp is number) &&
+             data.folderId is string && data.folderId.size() > 0 &&
+             data.timestamp is number &&
+             (!('mediaUrl' in data) || (data.mediaUrl is string || data.mediaUrl == null)) &&
              data.createdAt is timestamp;
+    }
+
+    function isValidFolder(data) {
+      return hasRequiredFields(['id', 'name', 'userId', 'timestamp', 'createdAt']) &&
+             data.id is string && data.id.size() > 0 &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             (!('parentId' in data) || (data.parentId is string || data.parentId == null)) &&
+             data.userId is string && data.userId == request.auth.uid &&
+             data.timestamp is number &&
+             data.createdAt is timestamp;
+    }
+
+    function isValidMessage(data) {
+      return hasRequiredFields(['id', 'senderId', 'receiverId', 'content', 'timestamp', 'status']) &&
+             data.id is string && data.id.size() > 0 &&
+             data.senderId is string && data.senderId == request.auth.uid &&
+             data.receiverId is string && data.receiverId.size() > 0 &&
+             data.content is string && data.content.size() < 10000 &&
+             (!('type' in data) || data.type in ['text', 'photo', 'audio', 'video']) &&
+             (!('mediaUrl' in data) || (data.mediaUrl is string || data.mediaUrl == null)) &&
+             data.timestamp is number &&
+             (!('scheduledAt' in data) || data.scheduledAt is number) &&
+             data.status in ['pending', 'sent', 'read'];
     }
 
     // ===============================================================
@@ -88,16 +162,53 @@ service cloud.firestore {
     // ===============================================================
 
     match /users/{userId} {
-      allow read: if isOwner(userId);
-      allow create: if isOwner(userId) && isValidUser(request.resource.data) && uidUnchanged();
-      allow update: if isOwner(userId) && isValidUser(request.resource.data) && uidNotModified();
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) && isValidUser(request.resource.data) && uidUnchanged() && request.resource.data.role == 'user';
+      allow update: if (isOwner(userId) && isValidUser(request.resource.data) && uidNotModified() && 
+                        request.resource.data.role == resource.data.role && 
+                        request.resource.data.credits == resource.data.credits &&
+                        request.resource.data.plan == resource.data.plan &&
+                        request.resource.data.totalSpent == resource.data.totalSpent &&
+                        request.resource.data.totalProfit == resource.data.totalProfit) || isAdmin();
       
       match /items/{itemId} {
-        allow read: if isOwner(userId);
+        allow read: if isOwner(userId) || isAdmin();
         allow create: if isOwner(userId) && isValidItem(request.resource.data);
         allow update: if isOwner(userId) && isValidItem(request.resource.data) && request.resource.data.createdAt == resource.data.createdAt;
         allow delete: if isOwner(userId);
       }
+
+      match /folders/{folderId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId) && isValidFolder(request.resource.data);
+        allow update: if isOwner(userId) && isValidFolder(request.resource.data) && request.resource.data.createdAt == resource.data.createdAt;
+        allow delete: if isOwner(userId);
+      }
+    }
+
+    match /coupons/{couponId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /config/{configId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /plans/{planId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /messages/{messageId} {
+      allow read: if isAuthenticated() && (resource.data.senderId == request.auth.uid || resource.data.receiverId == request.auth.uid);
+      allow create: if isAuthenticated() && isValidMessage(request.resource.data);
+      allow update: if isAuthenticated() && (
+        (resource.data.senderId == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'content', 'scheduledAt'])) ||
+        (resource.data.receiverId == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']))
+      );
+      allow delete: if isAuthenticated() && resource.data.senderId == request.auth.uid;
     }
   }
 }

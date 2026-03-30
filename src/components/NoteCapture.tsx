@@ -7,14 +7,18 @@ import { getAI } from '../utils/ai';
 import { generateItemMetadata, analyzeForSchedule } from '../utils/aiMetadata';
 import { generateICS } from '../utils/calendar';
 import { AudioVisualizer } from './AudioVisualizer';
+import { useAuth } from '../AuthContext';
+import { CREDIT_COSTS } from '../constants/costs';
 
 interface NoteCaptureProps {
   inputMode: 'text' | 'voice';
+  folderId: string;
   onSaved: () => void;
   onCancel: () => void;
 }
 
-export function NoteCapture({ inputMode, onSaved, onCancel }: NoteCaptureProps) {
+export function NoteCapture({ inputMode, folderId, onSaved, onCancel }: NoteCaptureProps) {
+  const { spendCredits } = useAuth();
   const [note, setNote] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -164,6 +168,10 @@ export function NoteCapture({ inputMode, onSaved, onCancel }: NoteCaptureProps) 
   };
 
   const proceedSaving = async (type: 'note' | 'schedule', scheduleData?: any) => {
+    // Spend credits for saving note/schedule
+    const success = await spendCredits(CREDIT_COSTS.NOTE_SAVE, `Salvar ${type === 'schedule' ? 'Agendamento' : 'Nota'}`);
+    if (!success) return;
+
     setIsSaving(true);
     setScheduleSuggestion(null);
     try {
@@ -177,6 +185,7 @@ export function NoteCapture({ inputMode, onSaved, onCancel }: NoteCaptureProps) 
           type: 'schedule',
           content: note,
           timestamp: Date.now(),
+          folderId,
           metadata: {
             type: 'schedule',
             title: scheduleData.title || 'Compromisso sem título',
@@ -195,6 +204,7 @@ export function NoteCapture({ inputMode, onSaved, onCancel }: NoteCaptureProps) 
           type: 'text',
           content: note,
           timestamp: Date.now() + 1,
+          folderId,
           metadata: {
             type: 'note',
             title: noteMetadata?.title || 'Nota sem título',
@@ -213,6 +223,7 @@ export function NoteCapture({ inputMode, onSaved, onCancel }: NoteCaptureProps) 
           type: 'text',
           content: note,
           timestamp: Date.now(),
+          folderId,
           metadata: {
             type: 'note',
             title: metadata?.title || 'Nota sem título',

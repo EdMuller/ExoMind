@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Settings as SettingsIcon, Download, Upload, Cloud, Bell, Save, CheckCircle2, AlertCircle, User, Image as ImageIcon, Video, Mic, Volume2, Loader2, LogOut, Share2, FileText, QrCode, X, Smartphone, Globe } from 'lucide-react';
+import { Settings as SettingsIcon, Download, Upload, Cloud, Bell, Save, CheckCircle2, AlertCircle, User, Image as ImageIcon, Video, Mic, Volume2, Loader2, LogOut, Share2, FileText, QrCode, X, Smartphone, Globe, Shield, RefreshCw, CheckCircle, MessageCircle, HelpCircle } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { QRCodeSVG } from 'qrcode.react';
 import { getAI } from '../utils/ai';
@@ -7,24 +7,50 @@ import { Modality } from '@google/genai';
 import { getItems, importItems } from '../db';
 import { initAudio, getAudioContext } from '../utils/tts';
 import { useAuth } from '../AuthContext';
+import { APP_VERSION } from '../constants';
 
 interface SettingsProps {
   onClose?: () => void;
+  onAdminPanel?: () => void;
 }
 
-export function Settings({ onClose }: SettingsProps) {
-  const { user, logOut, cacaVoiceUses, incrementCacaVoiceUses, plan } = useAuth();
+export function Settings({ onClose, onAdminPanel }: SettingsProps) {
+  const { 
+    user, 
+    logOut, 
+    plan, 
+    role, 
+    publishedVersion,
+    googleDriveConnected,
+    connectGoogleDrive,
+    syncAllToGoogleDrive,
+    syncingToDrive,
+    syncProgress,
+    lastSyncTime,
+    supportWhatsapp
+  } = useAuth();
   const [appName, setAppName] = useState('ExoMind');
   const [userName, setUserName] = useState('');
   const [customAiInstructions, setCustomAiInstructions] = useState('');
   const [appIcon, setAppIcon] = useState<string | null>(null);
+  const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'up-to-date' | 'available'>('idle');
+
+  const checkUpdates = () => {
+    setUpdateStatus('checking');
+    setTimeout(() => {
+      if (publishedVersion !== APP_VERSION) {
+        setUpdateStatus('available');
+      } else {
+        setUpdateStatus('up-to-date');
+      }
+    }, 1500);
+  };
   const [reminderEnabled, setReminderEnabled] = useState(false);
   const [backupMode, setBackupMode] = useState<'automatic' | 'manual'>('manual');
   const [backupInterval, setBackupInterval] = useState<number>(7);
   const [selectedVoice, setSelectedVoice] = useState('Zephyr');
   const [voiceRate, setVoiceRate] = useState(1.0);
   const [webSearchEnabled, setWebSearchEnabled] = useState(localStorage.getItem('exo_web_search') === 'true');
-  const [silenceTimeout, setSilenceTimeout] = useState(3);
   const [handsFreeEnabled, setHandsFreeEnabled] = useState(localStorage.getItem('exo_voice_hands_free') === 'true');
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [status, setStatus] = useState<{ type: 'success' | 'error' | null; message: string }>({ type: null, message: '' });
@@ -77,7 +103,6 @@ export function Settings({ onClose }: SettingsProps) {
     setSelectedVoice(localStorage.getItem('exo_voice_preference') || 'Zephyr');
     setVoiceRate(parseFloat(localStorage.getItem('exo_voice_rate') || '1.0'));
     setWebSearchEnabled(localStorage.getItem('exo_web_search') === 'true');
-    setSilenceTimeout(parseInt(localStorage.getItem('exo_voice_silence_timeout') || '3', 10));
     setHandsFreeEnabled(localStorage.getItem('exo_voice_hands_free') === 'true');
   }, []);
 
@@ -97,7 +122,6 @@ export function Settings({ onClose }: SettingsProps) {
     localStorage.setItem('exo_voice_preference', selectedVoice);
     localStorage.setItem('exo_voice_rate', voiceRate.toString());
     localStorage.setItem('exo_web_search', webSearchEnabled.toString());
-    localStorage.setItem('exo_voice_silence_timeout', silenceTimeout.toString());
     localStorage.setItem('exo_voice_hands_free', handsFreeEnabled.toString());
     window.dispatchEvent(new Event('settingsUpdated'));
     
@@ -257,45 +281,11 @@ export function Settings({ onClose }: SettingsProps) {
     initAudio();
     try {
       const text = "Parabéns, Você está conhecendo seu mais recente e mais completo assistente diário para todos os assuntos.";
-      if (selectedVoice === 'uHxni9EgaoUr7MGw3Der') {
-        const apiKey = process.env.ELEVENLABS_SECRET_KEY;
-        if (!apiKey) {
-          throw new Error('ElevenLabs API Key not configured');
-        }
-        const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${selectedVoice}`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'xi-api-key': apiKey
-          },
-          body: JSON.stringify({
-            text: text,
-            model_id: 'eleven_multilingual_v2',
-            voice_settings: {
-              stability: 0.5,
-              similarity_boost: 0.75
-            }
-          })
-        });
-
-        if (!response.ok) {
-          throw new Error('Falha ao gerar áudio com ElevenLabs');
-        }
-
-        const audioBlob = await response.blob();
-        const audioUrl = URL.createObjectURL(audioBlob);
-        const audio = new Audio(audioUrl);
-        audio.playbackRate = voiceRate;
-        
-        audio.onended = () => {
-          setIsPreviewing(false);
-          URL.revokeObjectURL(audioUrl);
-        };
-        
-        audio.play();
-        
-        // Increment usage after successful play
-        await incrementCacaVoiceUses();
+      if (selectedVoice === 'personal_voice') {
+        // Personal voice logic for Diamond users
+        showStatus('success', 'A Voz Pessoal permite que você clone sua própria voz. Este recurso está disponível para usuários Diamante.');
+        setIsPreviewing(false);
+        return;
       } else {
         const ai = getAI();
         const response = await ai.models.generateContent({
@@ -418,13 +408,72 @@ export function Settings({ onClose }: SettingsProps) {
               </div>
             </div>
             
-            <button
-              onClick={logOut}
-              className="w-full flex items-center justify-center gap-2 bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/20 py-3 px-4 rounded-xl font-medium transition-colors"
-            >
-              <LogOut size={18} />
-              Sair da conta
-            </button>
+            <div className="flex flex-col gap-2">
+              {role === 'admin' && onAdminPanel && (
+                <button
+                  onClick={onAdminPanel}
+                  className="w-full flex items-center justify-center gap-2 bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/20 py-3 px-4 rounded-xl font-bold transition-colors"
+                >
+                  <Shield size={18} />
+                  Painel Administrativo
+                </button>
+              )}
+              
+              <button
+                onClick={logOut}
+                className="w-full flex items-center justify-center gap-2 bg-slate-700/50 text-slate-400 hover:bg-slate-700 border border-slate-700 py-3 px-4 rounded-xl font-medium transition-colors"
+              >
+                <LogOut size={18} />
+                Sair da conta
+              </button>
+            </div>
+          </section>
+
+          {/* Version Section */}
+          <section className="bg-slate-800 border border-slate-700 rounded-2xl p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                <RefreshCw size={20} className="text-emerald-400" />
+                Versão do App
+              </h3>
+              <span className="text-xs font-mono text-slate-500 bg-slate-900 px-2 py-1 rounded border border-slate-700">
+                v{APP_VERSION}
+              </span>
+            </div>
+            
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={checkUpdates}
+                disabled={updateStatus === 'checking'}
+                className="w-full flex items-center justify-center gap-2 bg-slate-700/50 text-slate-200 hover:bg-slate-700 border border-slate-700 py-3 px-4 rounded-xl font-medium transition-colors disabled:opacity-50"
+              >
+                {updateStatus === 'checking' ? (
+                  <RefreshCw size={18} className="animate-spin" />
+                ) : (
+                  <RefreshCw size={18} />
+                )}
+                Verificar Atualizações
+              </button>
+
+              {updateStatus === 'up-to-date' && (
+                <div className="flex items-center gap-2 text-emerald-400 text-sm justify-center bg-emerald-500/10 p-2 rounded-lg border border-emerald-500/20">
+                  <CheckCircle size={16} />
+                  O app está atualizado!
+                </div>
+              )}
+
+              {updateStatus === 'available' && (
+                <div className="flex flex-col gap-2 p-3 bg-blue-500/10 rounded-lg border border-blue-500/20">
+                  <div className="flex items-center gap-2 text-blue-400 text-sm font-bold">
+                    <AlertCircle size={16} />
+                    Nova versão disponível: v{publishedVersion}
+                  </div>
+                  <p className="text-xs text-slate-400">
+                    Recarregue a página ou reinicie o app para atualizar.
+                  </p>
+                </div>
+              )}
+            </div>
           </section>
 
           {/* Personalization Section */}
@@ -506,13 +555,13 @@ export function Settings({ onClose }: SettingsProps) {
                 <option value="Puck">Puck (Masculina/Neutra - Descontraída)</option>
                 <option value="Charon">Charon (Masculina - Grave)</option>
                 <option value="Fenrir">Fenrir (Masculina - Enérgica)</option>
-                <option value="uHxni9EgaoUr7MGw3Der" disabled={cacaVoiceUses >= 5}>
-                  Cacá Voice (Premium) {cacaVoiceUses >= 5 ? '- Esgotado' : ''}
+                <option value="personal_voice" disabled={plan !== 'Diamante'}>
+                  Voz Pessoal (Diamante) {plan !== 'Diamante' ? '- Requer Plano Diamante' : ''}
                 </option>
               </select>
               <button
                 onClick={handlePreviewVoice}
-                disabled={isPreviewing || (selectedVoice === 'uHxni9EgaoUr7MGw3Der' && cacaVoiceUses >= 5)}
+                disabled={isPreviewing || (selectedVoice === 'personal_voice' && plan !== 'Diamante')}
                 className={`p-3 rounded-lg border transition-colors flex items-center justify-center min-w-[48px] ${
                   isPreviewing 
                     ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400' 
@@ -564,29 +613,9 @@ export function Settings({ onClose }: SettingsProps) {
                   <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
                 </label>
               </div>
-
-              <div className="mb-2">
-                <label className="block text-sm font-medium text-slate-400 mb-2 flex justify-between">
-                  <span>Tempo de Pausa (Silêncio)</span>
-                  <span className="text-emerald-400 font-mono">{silenceTimeout}s</span>
-                </label>
-                <div className="flex items-center gap-3">
-                  <span className="text-xs text-slate-500">1s</span>
-                  <input
-                    type="range"
-                    min="1"
-                    max="10"
-                    step="1"
-                    value={silenceTimeout}
-                    onChange={(e) => setSilenceTimeout(parseInt(e.target.value))}
-                    className="flex-1 h-2 bg-slate-900 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-                  />
-                  <span className="text-xs text-slate-500">10s</span>
-                </div>
-                <p className="text-xs text-slate-500 mt-2">
-                  Define quanto tempo de silêncio o ExoMind deve esperar antes de considerar que você terminou de falar.
-                </p>
-              </div>
+              <p className="text-[10px] text-amber-400/70 italic mt-1">
+                * Recurso experimental. Recomendado apenas para vozes nativas (Zephyr, Kore, etc) para melhor performance.
+              </p>
             </div>
 
             <div className="mt-6 pt-6 border-t border-slate-700">
@@ -609,144 +638,123 @@ export function Settings({ onClose }: SettingsProps) {
                 Permite que o ExoMind busque informações em tempo real na internet (clima, notícias, músicas, etc).
               </p>
             </div>
-
-            {selectedVoice === 'uHxni9EgaoUr7MGw3Der' && (
-              <div className="mt-4 p-4 bg-purple-500/10 border border-purple-500/20 rounded-xl">
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-sm font-medium text-purple-300">Uso da Voz Premium (Cacá)</span>
-                  <span className="text-sm font-bold text-purple-400">{cacaVoiceUses} / 10</span>
-                </div>
-                <div className="w-full bg-slate-900 rounded-full h-2 overflow-hidden">
-                  <div 
-                    className="bg-purple-500 h-2 rounded-full transition-all" 
-                    style={{ width: `${(cacaVoiceUses / 10) * 100}%` }}
-                  ></div>
-                </div>
-                <p className="text-xs text-slate-400 mt-2">
-                  A voz clonada é um recurso premium limitado a 10 interações na versão gratuita.
-                </p>
-              </div>
-            )}
           </section>
 
-          {/* Backup Section */}
+          {/* Data Management Section */}
           <section className="bg-slate-800 border border-slate-700 rounded-2xl p-5">
             <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-              <Save size={20} className="text-blue-400" />
-              Backup e Segurança
+              <Download size={20} className="text-emerald-400" />
+              Gestão de Dados
+            </h3>
+            
+            <div className="grid grid-cols-1 gap-3">
+              <button
+                onClick={() => setShowExportModal(true)}
+                className="flex items-center gap-4 p-4 bg-slate-900 border border-slate-700 hover:border-emerald-500 text-white rounded-xl transition-colors"
+              >
+                <div className="w-10 h-10 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-400">
+                  <FileText size={20} />
+                </div>
+                <div className="text-left">
+                  <span className="block font-bold">Exportar Dados</span>
+                  <span className="text-xs text-slate-400">Escolha arquivos ou pastas completas</span>
+                </div>
+              </button>
+
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="flex items-center gap-4 p-4 bg-slate-900 border border-slate-700 hover:border-purple-500 text-white rounded-xl transition-colors"
+              >
+                <div className="w-10 h-10 rounded-lg bg-purple-500/10 flex items-center justify-center text-purple-400">
+                  <Upload size={20} />
+                </div>
+                <div className="text-left">
+                  <span className="block font-bold">Restaurar Backup</span>
+                  <span className="text-xs text-slate-400">Importar dados de um arquivo JSON</span>
+                </div>
+              </button>
+              <input type="file" ref={fileInputRef} onChange={handleImport} accept=".json" className="hidden" />
+            </div>
+          </section>
+
+          {/* Google Drive Integration Section */}
+          <section className="bg-slate-800 border border-slate-700 rounded-2xl p-5">
+            <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+              <Cloud size={20} className="text-blue-400" />
+              Sincronização com Google Drive
             </h3>
             
             <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 mb-6">
               <p className="text-blue-200 text-sm leading-relaxed">
-                <strong>Importante:</strong> O ExoMind salva seus dados localmente no seu dispositivo para garantir sua privacidade. Por isso, <strong>fazer backups regulares é essencial</strong> para não perder suas informações caso limpe o navegador ou troque de aparelho.
+                <strong>Privacidade Total:</strong> Ao conectar seu Google Drive, o ExoMind salvará uma cópia de todos os seus dados diretamente na sua conta Google. Nós <strong>não</strong> temos acesso a esses arquivos fora do aplicativo.
               </p>
             </div>
 
-            <div className="space-y-6">
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-3">Modo de Backup</label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <label className={`flex items-center p-3 border rounded-xl cursor-pointer transition-colors ${backupMode === 'automatic' ? 'bg-blue-500/20 border-blue-500' : 'bg-slate-900 border-slate-700 hover:border-slate-600'}`}>
-                    <input type="radio" name="backupMode" value="automatic" checked={backupMode === 'automatic'} onChange={() => setBackupMode('automatic')} className="hidden" />
-                    <div className={`w-4 h-4 rounded-full border flex items-center justify-center mr-3 ${backupMode === 'automatic' ? 'border-blue-500' : 'border-slate-500'}`}>
-                      {backupMode === 'automatic' && <div className="w-2 h-2 rounded-full bg-blue-500" />}
+            <div className="space-y-4">
+              {googleDriveConnected ? (
+                <div className="flex flex-col gap-4">
+                  <div className="flex items-center gap-3 p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-400">
+                    {syncingToDrive ? (
+                      <RefreshCw size={24} className="animate-spin" />
+                    ) : (
+                      <CheckCircle size={24} />
+                    )}
+                    <div className="flex-1">
+                      <p className="font-bold text-sm">
+                        {syncingToDrive ? 'Sincronizando...' : 'Google Drive Conectado'}
+                      </p>
+                      <p className="text-xs opacity-80 text-emerald-300/70">
+                        {syncingToDrive && syncProgress 
+                          ? `Sincronizando item ${syncProgress.current} de ${syncProgress.total}...`
+                          : lastSyncTime 
+                            ? `Última sincronização: ${new Date(lastSyncTime).toLocaleString('pt-BR')}`
+                            : 'Seus dados estão sendo sincronizados com a pasta "ExoMind".'}
+                      </p>
                     </div>
-                    <div>
-                      <span className="block text-sm font-medium text-white">Automático (Nuvem)</span>
+                  </div>
+
+                  {syncingToDrive && syncProgress && (
+                    <div className="w-full bg-slate-700 h-2 rounded-full overflow-hidden">
+                      <motion.div 
+                        className="bg-emerald-500 h-full"
+                        initial={{ width: 0 }}
+                        animate={{ width: `${(syncProgress.current / syncProgress.total) * 100}%` }}
+                      />
                     </div>
-                  </label>
-                  <label className={`flex items-center p-3 border rounded-xl cursor-pointer transition-colors ${backupMode === 'manual' ? 'bg-blue-500/20 border-blue-500' : 'bg-slate-900 border-slate-700 hover:border-slate-600'}`}>
-                    <input type="radio" name="backupMode" value="manual" checked={backupMode === 'manual'} onChange={() => setBackupMode('manual')} className="hidden" />
-                    <div className={`w-4 h-4 rounded-full border flex items-center justify-center mr-3 ${backupMode === 'manual' ? 'border-blue-500' : 'border-slate-500'}`}>
-                      {backupMode === 'manual' && <div className="w-2 h-2 rounded-full bg-blue-500" />}
-                    </div>
-                    <div>
-                      <span className="block text-sm font-medium text-white">Manual (Local)</span>
-                    </div>
-                  </label>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      onClick={syncAllToGoogleDrive}
+                      disabled={syncingToDrive}
+                      className="py-3 px-4 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-white rounded-xl text-sm font-medium transition-colors flex items-center justify-center gap-2"
+                    >
+                      <RefreshCw size={16} className={syncingToDrive ? 'animate-spin' : ''} />
+                      Sincronizar Tudo
+                    </button>
+                    <button
+                      onClick={connectGoogleDrive}
+                      disabled={syncingToDrive}
+                      className="py-3 px-4 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-white rounded-xl text-sm font-medium transition-colors flex items-center justify-center gap-2"
+                    >
+                      <Share2 size={16} />
+                      Trocar Conta
+                    </button>
+                  </div>
                 </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">
-                  {backupMode === 'automatic' ? 'Frequência do Backup Automático' : 'Lembrar de fazer backup a cada'}
-                </label>
-                <div className="flex items-center gap-3">
-                  <input
-                    type="range"
-                    min="1"
-                    max="30"
-                    value={backupInterval}
-                    onChange={(e) => setBackupInterval(parseInt(e.target.value))}
-                    className="flex-1 h-2 bg-slate-900 rounded-lg appearance-none cursor-pointer accent-blue-500"
-                  />
-                  <span className="bg-slate-900 border border-slate-700 px-3 py-1 rounded-lg text-white font-mono text-sm min-w-[80px] text-center">
-                    {backupInterval} {backupInterval === 1 ? 'dia' : 'dias'}
-                  </span>
-                </div>
-                <p className="text-slate-500 text-xs mt-2 italic">
-                  {backupMode === 'automatic' 
-                    ? 'O sistema tentará enviar seus dados para a nuvem configurada abaixo neste intervalo.' 
-                    : 'Você receberá um aviso visual no aplicativo se o último backup for mais antigo que este período.'}
-                </p>
-              </div>
-
-              <div className="flex items-center justify-between pt-2 border-t border-slate-700/50">
-                <span className="text-sm text-slate-300">Ativar Notificações de Alerta</span>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input 
-                    type="checkbox" 
-                    className="sr-only peer"
-                    checked={reminderEnabled}
-                    onChange={(e) => setReminderEnabled(e.target.checked)}
-                  />
-                  <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500"></div>
-                </label>
-              </div>
-
-              <div className="pt-4 border-t border-slate-700">
-                <p className="text-slate-400 text-sm mb-4">Gerenciamento de Dados</p>
-                <div className="grid grid-cols-1 gap-3">
-                  <button
-                    onClick={handleBackup}
-                    className="flex items-center gap-4 p-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors shadow-lg shadow-blue-900/20"
-                  >
-                    <div className="w-10 h-10 rounded-lg bg-white/10 flex items-center justify-center">
-                      <Save size={20} />
-                    </div>
-                    <div className="text-left">
-                      <span className="block font-bold">Fazer Backup</span>
-                      <span className="text-xs text-blue-100 opacity-80">Salva seus dados para segurança</span>
-                    </div>
-                  </button>
-
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    className="flex items-center gap-4 p-4 bg-slate-900 border border-slate-700 hover:border-purple-500 text-white rounded-xl transition-colors"
-                  >
-                    <div className="w-10 h-10 rounded-lg bg-purple-500/10 flex items-center justify-center text-purple-400">
-                      <Upload size={20} />
-                    </div>
-                    <div className="text-left">
-                      <span className="block font-bold">Restaurar Dados</span>
-                      <span className="text-xs text-slate-400">Recupera um backup anterior</span>
-                    </div>
-                  </button>
-
-                  <button
-                    onClick={() => setShowExportModal(true)}
-                    className="flex items-center gap-4 p-4 bg-slate-900 border border-slate-700 hover:border-emerald-500 text-white rounded-xl transition-colors"
-                  >
-                    <div className="w-10 h-10 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-400">
-                      <FileText size={20} />
-                    </div>
-                    <div className="text-left">
-                      <span className="block font-bold">Exportar Dados</span>
-                      <span className="text-xs text-slate-400">Escolha formatos e itens específicos</span>
-                    </div>
-                  </button>
-                </div>
-              </div>
+              ) : (
+                <button
+                  onClick={connectGoogleDrive}
+                  className="w-full flex items-center justify-center gap-3 bg-white text-slate-900 py-4 px-6 rounded-xl font-bold text-lg hover:bg-slate-100 transition-all shadow-lg shadow-white/10"
+                >
+                  <Cloud size={24} />
+                  Conectar Google Drive
+                </button>
+              )}
+              
+              <p className="text-xs text-slate-500 text-center px-4">
+                O ExoMind solicitará permissão apenas para criar e editar os arquivos que ele mesmo criar no seu Drive.
+              </p>
             </div>
           </section>
 
@@ -767,6 +775,27 @@ export function Settings({ onClose }: SettingsProps) {
               <Download size={18} />
               {deferredPrompt ? 'Instalar Agora' : 'Como Instalar'}
             </button>
+          </section>
+
+          {/* Support Section */}
+          <section className="bg-slate-800 border border-slate-700 rounded-2xl p-5">
+            <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+              <HelpCircle size={20} className="text-blue-400" />
+              Suporte & Ajuda
+            </h3>
+            <p className="text-slate-400 text-sm mb-6">
+              Precisa de ajuda ou quer dar um feedback? Nossa equipe está pronta para te atender.
+            </p>
+            
+            <a
+              href={`https://wa.me/${supportWhatsapp}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full flex items-center justify-center gap-2 bg-[#25D366] hover:bg-[#20bd5a] text-white py-4 px-6 rounded-xl font-bold text-lg transition-all shadow-lg shadow-green-900/20 active:scale-[0.98]"
+            >
+              <MessageCircle size={24} />
+              Falar com Suporte
+            </a>
           </section>
 
           {/* Share Section */}

@@ -4,13 +4,18 @@ import { motion } from 'framer-motion';
 import { saveItem } from '../db';
 import { generateItemMetadata, analyzeForSchedule } from '../utils/aiMetadata';
 import { generateICS } from '../utils/calendar';
+import { useAuth } from '../AuthContext';
+import { CREDIT_COSTS } from '../constants/costs';
 
 interface Props {
+  inputMode: 'text' | 'voice';
+  folderId: string;
   onSaved: () => void;
   onCancel?: () => void;
 }
 
-export function LocationCapture({ onSaved, onCancel }: Props) {
+export function LocationCapture({ inputMode, folderId, onSaved, onCancel }: Props) {
+  const { spendCredits } = useAuth();
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [description, setDescription] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -71,6 +76,10 @@ export function LocationCapture({ onSaved, onCancel }: Props) {
   };
 
   const proceedSaving = async (type: 'location' | 'schedule', scheduleData?: any) => {
+    // Spend credits for saving location/schedule
+    const success = await spendCredits(CREDIT_COSTS.LOCATION_SAVE, `Salvar ${type === 'schedule' ? 'Agendamento' : 'Localização'}`);
+    if (!success) return;
+
     setIsSaving(true);
     setScheduleSuggestion(null);
     try {
@@ -86,6 +95,7 @@ export function LocationCapture({ onSaved, onCancel }: Props) {
           type: 'schedule',
           content: description || 'Localização com agendamento',
           timestamp: Date.now() + 1,
+          folderId,
           metadata: {
             type: 'schedule',
             title: scheduleData.title || 'Compromisso sem título',
@@ -108,6 +118,7 @@ export function LocationCapture({ onSaved, onCancel }: Props) {
         type: 'location',
         content: JSON.stringify(location),
         timestamp: Date.now(),
+        folderId,
         metadata: { 
           description: description.trim(),
           type: 'location',

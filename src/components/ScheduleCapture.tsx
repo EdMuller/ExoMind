@@ -7,11 +7,12 @@ import { generateICS } from '../utils/calendar';
 
 interface ScheduleCaptureProps {
   inputMode: 'text' | 'voice';
+  folderId: string;
   onSaved: () => void;
   onCancel: () => void;
 }
 
-export function ScheduleCapture({ inputMode, onSaved, onCancel }: ScheduleCaptureProps) {
+export function ScheduleCapture({ inputMode, folderId, onSaved, onCancel }: ScheduleCaptureProps) {
   const [title, setTitle] = useState('');
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
@@ -42,6 +43,7 @@ export function ScheduleCapture({ inputMode, onSaved, onCancel }: ScheduleCaptur
         content: `Agendamento: ${title} em ${date} às ${time}\n${description}`,
         metadata: scheduleMetadata,
         timestamp: Date.now(),
+        folderId,
       });
       
       generateICS(scheduleMetadata);

@@ -1,11 +1,11 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { MessageSquare, Camera, MapPin, Calendar, Search, Loader2, Mic } from 'lucide-react';
+import { MessageSquare, Camera, MapPin, Calendar, Search, Loader2, Mic, Video } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { playTTS, initAudio } from '../utils/tts';
 import { useAuth } from '../AuthContext';
 
 type InputMode = 'text' | 'voice';
-type ActionType = 'comentar' | 'fotografar' | 'salvar_local' | 'agendar' | 'consultar';
+type ActionType = 'comentar' | 'fotografar' | 'salvar_local' | 'agendar' | 'consultar' | 'gravar_audio' | 'gravar_video';
 
 interface ActionSelectorProps {
   inputMode: InputMode;
@@ -13,7 +13,7 @@ interface ActionSelectorProps {
 }
 
 export function ActionSelector({ inputMode, onSelectAction }: ActionSelectorProps) {
-  const { cacaVoiceUses, incrementCacaVoiceUses } = useAuth();
+  const { credits, isVip } = useAuth();
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef<any>(null);
@@ -61,6 +61,10 @@ export function ActionSelector({ inputMode, onSelectAction }: ActionSelectorProp
         onSelectAction('agendar');
       } else if (transcript.includes('consultar') || transcript.includes('consulta') || transcript.includes('pesquisar')) {
         onSelectAction('consultar');
+      } else if (transcript.includes('gravar áudio') || transcript.includes('áudio')) {
+        onSelectAction('gravar_audio');
+      } else if (transcript.includes('gravar vídeo') || transcript.includes('vídeo')) {
+        onSelectAction('gravar_video');
       } else {
         console.log("Command not recognized");
         // Optionally restart listening if command not recognized
@@ -87,14 +91,13 @@ export function ActionSelector({ inputMode, onSelectAction }: ActionSelectorProp
     try {
       let selectedVoice = localStorage.getItem('exo_voice_preference') || 'Zephyr';
       const voiceRate = parseFloat(localStorage.getItem('exo_voice_rate') || '1.0');
-      if (selectedVoice === 'uHxni9EgaoUr7MGw3Der' && cacaVoiceUses >= 5) {
-        selectedVoice = 'Zephyr'; // Fallback if limit reached
+      
+      // Fallback for deprecated voices
+      if (selectedVoice === 'uHxni9EgaoUr7MGw3Der' || selectedVoice === 'personal_voice') {
+        selectedVoice = 'Zephyr';
       }
       
-      await playTTS('O que você deseja fazer? Comentar, Fotografar, Salvar Local, Agendar ou Consultar?', selectedVoice, voiceRate);
-      if (selectedVoice === 'uHxni9EgaoUr7MGw3Der') {
-        await incrementCacaVoiceUses();
-      }
+      await playTTS('O que você deseja fazer? Comentar, Fotografar, Gravar Áudio, Gravar Vídeo, Salvar Local, Agendar ou Consultar?', selectedVoice, voiceRate);
       setIsSpeaking(false);
       // Automatically start listening after speaking
       startListening();
@@ -108,8 +111,10 @@ export function ActionSelector({ inputMode, onSelectAction }: ActionSelectorProp
   const actions: { id: ActionType; label: string; icon: React.ReactNode; color: string }[] = [
     { id: 'comentar', label: 'Comentar', icon: <MessageSquare size={28} />, color: 'text-blue-400' },
     { id: 'fotografar', label: 'Fotografar', icon: <Camera size={28} />, color: 'text-purple-400' },
-    { id: 'salvar_local', label: 'Local', icon: <MapPin size={28} />, color: 'text-orange-400' },
-    { id: 'agendar', label: 'Agendar', icon: <Calendar size={28} />, color: 'text-emerald-400' },
+    { id: 'gravar_audio', label: 'Áudio', icon: <Mic size={28} />, color: 'text-red-400' },
+    { id: 'gravar_video', label: 'Vídeo', icon: <Video size={28} />, color: 'text-orange-400' },
+    { id: 'salvar_local', label: 'Local', icon: <MapPin size={28} />, color: 'text-emerald-400' },
+    { id: 'agendar', label: 'Agendar', icon: <Calendar size={28} />, color: 'text-amber-400' },
     { id: 'consultar', label: 'Consultar', icon: <Search size={28} />, color: 'text-rose-400' },
   ];
 
@@ -121,6 +126,14 @@ export function ActionSelector({ inputMode, onSelectAction }: ActionSelectorProp
       className="flex-1 flex flex-col items-center justify-center p-6 gap-6 w-full max-w-md mx-auto"
     >
       <div className="text-center mb-6">
+        <div className="flex items-center justify-center gap-2 mb-4">
+          <div className="px-3 py-1 bg-slate-800 border border-slate-700 rounded-full flex items-center gap-2 shadow-sm">
+            <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+            <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+              {isVip ? 'Plano Ilimitado' : `${credits.toLocaleString('pt-BR')} Créditos`}
+            </span>
+          </div>
+        </div>
         <h2 className="text-2xl font-bold mb-2 text-white">O que deseja fazer?</h2>
         <p className="text-slate-400">
           {isSpeaking ? (

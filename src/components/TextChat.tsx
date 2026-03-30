@@ -1,7 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Loader2 } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { Send, Loader2, Image as ImageIcon, X, Sparkles, Lock } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { getAI } from '../utils/ai';
+import { useAuth } from '../AuthContext';
+import { analyzePhoto } from '../utils/aiMetadata';
 
 interface Message {
   id: string;
@@ -10,9 +12,12 @@ interface Message {
 }
 
 export function TextChat() {
+  const { plan } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatRef = useRef<any>(null);
 
@@ -35,24 +40,59 @@ export function TextChat() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setSelectedImage(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const handleSend = async () => {
-    if (!input.trim() || isLoading) return;
+    if ((!input.trim() && !selectedImage) || isLoading) return;
     if (!chatRef.current) {
       setMessages(prev => [...prev, { id: Date.now().toString(), role: 'model', text: 'O chat ainda não foi inicializado. Tente novamente em alguns segundos.' }]);
       return;
     }
 
     const userMsg = input.trim();
+    const imageToUpload = selectedImage;
+    
     setInput('');
-    setMessages(prev => [...prev, { id: Date.now().toString(), role: 'user', text: userMsg }]);
+    setSelectedImage(null);
+    
+    const messageId = Date.now().toString();
+    setMessages(prev => [...prev, { 
+      id: messageId, 
+      role: 'user', 
+      text: userMsg || (imageToUpload ? '[Imagem enviada]' : '') 
+    }]);
     setIsLoading(true);
 
     try {
-      const response = await chatRef.current.sendMessage({ message: userMsg });
-      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'model', text: response.text }]);
+      let response;
+      if (imageToUpload && plan === 'Diamante') {
+        const base64Data = imageToUpload.split(',')[1];
+        response = await chatRef.current.sendMessage({
+          message: {
+            role: 'user',
+            parts: [
+              { inlineData: { mimeType: 'image/jpeg', data: base64Data } },
+              { text: userMsg || "O que você vê nesta imagem?" }
+            ]
+          }
+        });
+      } else {
+        response = await chatRef.current.sendMessage({ message: userMsg });
+      }
+      
+      setMessages(prev => [...prev, { id: (Date.now() + 1).toString(), role: 'model', text: response.text }]);
     } catch (error: any) {
       console.error('Error sending message:', error);
-      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'model', text: error?.message || 'Desculpe, ocorreu um erro ao processar sua mensagem.' }]);
+      setMessages(prev => [...prev, { id: (Date.now() + 1).toString(), role: 'model', text: error?.message || 'Desculpe, ocorreu um erro ao processar sua mensagem.' }]);
     } finally {
       setIsLoading(false);
     }
@@ -98,18 +138,56 @@ export function TextChat() {
       </div>
 
       <div className="p-4 bg-slate-900 border-t border-slate-800">
+        <AnimatePresence>
+          {selectedImage && (
+            <motion.div 
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 10 }}
+              className="mb-4 relative inline-block"
+            >
+              <img src={selectedImage} alt="Preview" className="h-20 w-20 object-cover rounded-xl border border-slate-700" />
+              <button 
+                onClick={() => setSelectedImage(null)}
+                className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 shadow-lg"
+              >
+                <X size={14} />
+              </button>
+              {plan !== 'Diamante' && (
+                <div className="absolute inset-0 bg-slate-900/80 rounded-xl flex flex-col items-center justify-center p-1 text-center">
+                  <Lock size={12} className="text-amber-500 mb-1" />
+                  <span className="text-[8px] text-amber-500 font-bold leading-tight">Diamante Only</span>
+                </div>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <div className="flex items-center gap-2">
+          <input 
+            type="file"
+            accept="image/*"
+            className="hidden"
+            ref={fileInputRef}
+            onChange={handleImageSelect}
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className={`p-3 rounded-full transition-colors ${selectedImage ? 'text-blue-500 bg-blue-500/10' : 'text-slate-400 hover:text-white bg-slate-800'}`}
+          >
+            <ImageIcon size={20} />
+          </button>
           <input
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-            placeholder="Digite sua mensagem..."
+            placeholder={selectedImage ? "Pergunte sobre a foto..." : "Digite sua mensagem..."}
             className="flex-1 bg-slate-800 border border-slate-700 rounded-full px-4 py-3 text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all text-white placeholder-slate-400"
           />
           <button
             onClick={handleSend}
-            disabled={!input.trim() || isLoading}
+            disabled={(!input.trim() && !selectedImage) || isLoading}
             className="p-3 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 disabled:text-slate-500 rounded-full text-white transition-colors"
           >
             <Send size={20} />

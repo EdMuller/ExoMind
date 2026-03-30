@@ -40,6 +40,33 @@ Texto: "${content}"`;
   }
 }
 
+export async function analyzePhoto(base64Data: string) {
+  try {
+    const ai = getAI();
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            {
+              inlineData: {
+                mimeType: 'image/jpeg',
+                data: base64Data.includes(',') ? base64Data.split(',')[1] : base64Data
+              }
+            },
+            { text: "Descreva o que você vê nesta imagem de forma concisa e objetiva. Identifique objetos, textos ou o contexto geral. Retorne apenas a descrição em português." }
+          ]
+        }
+      ]
+    });
+    return response.text || '';
+  } catch (error) {
+    console.error('Error analyzing photo:', error);
+    return '';
+  }
+}
+
 export async function generateItemMetadata(content: string, type: 'note' | 'photo' | 'location' | 'schedule') {
   try {
     let prompt = '';
