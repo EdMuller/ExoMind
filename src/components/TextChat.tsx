@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { v4 as uuidv4 } from 'uuid';
 import { Send, Loader2, Image as ImageIcon, X, Sparkles, Lock } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getAI } from '../utils/ai';
@@ -54,7 +55,7 @@ export function TextChat() {
   const handleSend = async () => {
     if ((!input.trim() && !selectedImage) || isLoading) return;
     if (!chatRef.current) {
-      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'model', text: 'O chat ainda não foi inicializado. Tente novamente em alguns segundos.' }]);
+      setMessages(prev => [...prev, { id: uuidv4(), role: 'model', text: 'O chat ainda não foi inicializado. Tente novamente em alguns segundos.' }]);
       return;
     }
 
@@ -64,7 +65,7 @@ export function TextChat() {
     setInput('');
     setSelectedImage(null);
     
-    const messageId = Date.now().toString();
+    const messageId = uuidv4();
     setMessages(prev => [...prev, { 
       id: messageId, 
       role: 'user', 

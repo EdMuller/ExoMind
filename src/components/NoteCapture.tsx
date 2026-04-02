@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { v4 as uuidv4 } from 'uuid';
 import { Mic, MicOff, Loader2, Save, X, CheckCircle2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { saveItem } from '../db';
@@ -176,8 +177,8 @@ export function NoteCapture({ inputMode, folderId, onSaved, onCancel }: NoteCapt
     setScheduleSuggestion(null);
     try {
       if (type === 'schedule' && scheduleData) {
-        const scheduleId = Date.now().toString();
-        const noteId = (Date.now() + 1).toString();
+        const scheduleId = uuidv4();
+        const noteId = uuidv4();
         
         // Save the schedule
         await saveItem({
@@ -219,7 +220,7 @@ export function NoteCapture({ inputMode, folderId, onSaved, onCancel }: NoteCapt
         const metadata = await generateItemMetadata(note, 'note');
         
         await saveItem({
-          id: Date.now().toString(),
+          id: uuidv4(),
           type: 'text',
           content: note,
           timestamp: Date.now(),

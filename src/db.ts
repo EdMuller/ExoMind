@@ -5,6 +5,8 @@ import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage
 import { googleDriveService } from './services/googleDrive';
 import { handleFirestoreError, OperationType } from './utils/firestoreErrorHandler';
 
+import { v4 as uuidv4 } from 'uuid';
+
 export interface ExoFolder {
   id: string;
   name: string;

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { v4 as uuidv4 } from 'uuid';
 import { Send, Loader2, Bot, User, Mic, MicOff, X, Image as ImageIcon } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { GoogleGenAI, LiveServerMessage, Type, Modality } from '@google/genai';
@@ -119,7 +120,7 @@ export function ConsultChat({ inputMode, folderId, onCancel }: ConsultChatProps)
     if (!success) return;
 
     setInput('');
-    setMessages(prev => [...prev, { id: Date.now().toString(), role: 'user', content: userMsg }]);
+    setMessages(prev => [...prev, { id: uuidv4(), role: 'user', content: userMsg }]);
     setIsLoading(true);
     
     let selectedVoice = localStorage.getItem('exo_voice_preference') || 'Zephyr';
@@ -166,7 +167,7 @@ export function ConsultChat({ inputMode, folderId, onCancel }: ConsultChatProps)
       const processed = processModelResponse(responseText);
 
       setMessages(prev => [...prev, { 
-        id: Date.now().toString(), 
+        id: uuidv4(), 
         role: 'model', 
         content: processed.text,
         images: processed.images
@@ -179,7 +180,7 @@ export function ConsultChat({ inputMode, folderId, onCancel }: ConsultChatProps)
     } catch (error: any) {
       console.error('Error generating response:', error);
       setMessages(prev => [...prev, { 
-        id: Date.now().toString(), 
+        id: uuidv4(), 
         role: 'model', 
         content: error?.message || 'Ocorreu um erro ao processar sua solicitação.' 
       }]);
@@ -282,7 +283,7 @@ export function ConsultChat({ inputMode, folderId, onCancel }: ConsultChatProps)
       }
 
       // Add user message placeholder
-      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'user', content: '(Mensagem de voz)' }]);
+      setMessages(prev => [...prev, { id: uuidv4(), role: 'user', content: '(Mensagem de voz)' }]);
 
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
@@ -310,7 +311,7 @@ export function ConsultChat({ inputMode, folderId, onCancel }: ConsultChatProps)
       const processed = processModelResponse(responseText);
 
       setMessages(prev => [...prev, { 
-        id: Date.now().toString(), 
+        id: uuidv4(), 
         role: 'model', 
         content: processed.text,
         images: processed.images

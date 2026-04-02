@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { v4 as uuidv4 } from 'uuid';
 import { Folder, Trash2, Move, Plus, X, ChevronRight, FileText, Download, Archive, AlertCircle, Check, Loader2, Camera, Mic, Video, MapPin } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getFolders, getItems, deleteItem, deleteFolder, updateItemFolder, ExoFolder, ExoItem, saveFolder } from '../db';
@@ -51,7 +52,7 @@ export function FolderManager({ onClose }: FolderManagerProps) {
   const handleCreateFolder = async () => {
     if (!newFolderName.trim()) return;
     const newFolder: ExoFolder = {
-      id: Date.now().toString(),
+      id: uuidv4(),
       name: newFolderName.trim(),
       parentId: null,
       userId: '',

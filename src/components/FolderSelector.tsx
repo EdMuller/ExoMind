@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { v4 as uuidv4 } from 'uuid';
 import { Folder, FolderPlus, Archive, ChevronRight, Plus, X, Search } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { getFolders, saveFolder, ExoFolder } from '../db';
@@ -31,7 +32,7 @@ export function FolderSelector({ onSelect, onCancel, showAllOption }: FolderSele
     if (!newFolderName.trim()) return;
     
     const newFolder: ExoFolder = {
-      id: Date.now().toString(),
+      id: uuidv4(),
       name: newFolderName.trim(),
       parentId: selectedParentId,
       userId: '', // Will be set in saveFolder

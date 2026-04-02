@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { v4 as uuidv4 } from 'uuid';
 import { Calendar, Save, X, Loader2, CheckCircle2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { saveItem } from '../db';
@@ -38,7 +39,7 @@ export function ScheduleCapture({ inputMode, folderId, onSaved, onCancel }: Sche
       };
 
       await saveItem({
-        id: Date.now().toString(),
+        id: uuidv4(),
         type: 'schedule',
         content: `Agendamento: ${title} em ${date} às ${time}\n${description}`,
         metadata: scheduleMetadata,

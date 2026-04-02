@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { v4 as uuidv4 } from 'uuid';
 import { MapPin, Save, Loader2, Navigation, X, CheckCircle2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { saveItem } from '../db';
@@ -83,11 +84,11 @@ export function LocationCapture({ inputMode, folderId, onSaved, onCancel }: Prop
     setIsSaving(true);
     setScheduleSuggestion(null);
     try {
-      const locationId = Date.now().toString();
+      const locationId = uuidv4();
       let scheduleId = null;
 
       if (type === 'schedule' && scheduleData) {
-        scheduleId = (Date.now() + 1).toString();
+        scheduleId = uuidv4();
         
         // Save the schedule
         await saveItem({
