@@ -80,7 +80,7 @@ export function VipModal({ isOpen, onClose }: VipModalProps) {
                 <CheckCircle2 size={48} className="text-emerald-400 mb-4" />
                 <h3 className="text-xl font-bold text-white mb-2">Acesso Liberado!</h3>
                 <p className="text-emerald-200 text-sm">
-                  Parabéns! Você agora tem acesso à <strong className="text-white">Cacá Voice Ilimitada</strong> e outros recursos exclusivos que estão por vir.
+                  Parabéns! Você agora tem acesso às <strong className="text-white">Vozes de IA Ilimitadas</strong> e outros recursos exclusivos que estão por vir.
                 </p>
               </motion.div>
             ) : (
@@ -127,7 +127,7 @@ export function VipModal({ isOpen, onClose }: VipModalProps) {
               <ul className="space-y-2 text-sm text-slate-400">
                 <li className="flex items-center gap-2">
                   <CheckCircle2 size={16} className="text-amber-400" />
-                  <span className="text-white">Cacá Voice Ilimitada</span>
+                  <span className="text-white">Vozes de IA Ilimitadas</span>
                 </li>
                 <li className="flex items-center gap-2">
                   <CheckCircle2 size={16} className="text-amber-400" />

@@ -3,6 +3,7 @@ import { db as firestore, auth, storage } from './firebase';
 import { collection, doc, setDoc, getDocs, query, orderBy, writeBatch, Timestamp, deleteDoc, updateDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { googleDriveService } from './services/googleDrive';
+import { handleFirestoreError, OperationType } from './utils/firestoreErrorHandler';
 
 export interface ExoFolder {
   id: string;
@@ -67,11 +68,19 @@ export async function saveFolder(folder: ExoFolder) {
   await localDb.folders.put(folder);
   
   // Save to Firestore
-  const folderRef = doc(firestore, 'users', user.uid, 'folders', folder.id);
-  await setDoc(folderRef, {
-    ...folder,
-    createdAt: Timestamp.fromMillis(folder.timestamp)
-  });
+  const path = `users/${user.uid}/folders/${folder.id}`;
+  try {
+    const folderRef = doc(firestore, 'users', user.uid, 'folders', folder.id);
+    await setDoc(folderRef, {
+      ...folder,
+      createdAt: Timestamp.fromMillis(folder.timestamp)
+    });
+  } catch (error: any) {
+    if (error.code === 'permission-denied') {
+      handleFirestoreError(error, OperationType.WRITE, path);
+    }
+    throw error;
+  }
 }
 
 export async function getFolders(): Promise<ExoFolder[]> {
@@ -83,16 +92,24 @@ export async function getFolders(): Promise<ExoFolder[]> {
   if (localFolders.length > 0) return localFolders;
 
   // If local empty, fetch from Firestore
-  const foldersRef = collection(firestore, 'users', user.uid, 'folders');
-  const snapshot = await getDocs(foldersRef);
-  const firestoreFolders = snapshot.docs.map(doc => doc.data() as ExoFolder);
-  
-  // Sync to local
-  if (firestoreFolders.length > 0) {
-    await localDb.folders.bulkPut(firestoreFolders);
+  const path = `users/${user.uid}/folders`;
+  try {
+    const foldersRef = collection(firestore, 'users', user.uid, 'folders');
+    const snapshot = await getDocs(foldersRef);
+    const firestoreFolders = snapshot.docs.map(doc => doc.data() as ExoFolder);
+    
+    // Sync to local
+    if (firestoreFolders.length > 0) {
+      await localDb.folders.bulkPut(firestoreFolders);
+    }
+    
+    return firestoreFolders;
+  } catch (error: any) {
+    if (error.code === 'permission-denied') {
+      handleFirestoreError(error, OperationType.GET, path);
+    }
+    return [];
   }
-  
-  return firestoreFolders;
 }
 
 export async function deleteFolder(id: string) {
@@ -175,6 +192,7 @@ export async function syncItemToCloud(item: ExoItem) {
     }
 
     // Save metadata to Firestore
+    const path = `users/${user.uid}/items/${item.id}`;
     const itemRef = doc(firestore, 'users', user.uid, 'items', item.id);
     const cleanMetadata = item.metadata ? JSON.parse(JSON.stringify(item.metadata)) : null;
 
@@ -212,18 +230,25 @@ export async function syncItemToCloud(item: ExoItem) {
       }
     }
 
-    await setDoc(itemRef, {
-      id: item.id,
-      type: item.type,
-      content: typeof item.content === 'string' ? item.content : '(media file)',
-      metadata: cleanMetadata,
-      timestamp: item.timestamp,
-      folderId: item.folderId,
-      mediaUrl: mediaUrl || null,
-      createdAt: Timestamp.fromMillis(item.timestamp),
-      title: item.title || null,
-      summary: item.summary || null
-    });
+    try {
+      await setDoc(itemRef, {
+        id: item.id,
+        type: item.type,
+        content: typeof item.content === 'string' ? item.content : '(media file)',
+        metadata: cleanMetadata,
+        timestamp: item.timestamp,
+        folderId: item.folderId,
+        mediaUrl: mediaUrl || null,
+        createdAt: Timestamp.fromMillis(item.timestamp),
+        title: item.title || null,
+        summary: item.summary || null
+      });
+    } catch (error: any) {
+      if (error.code === 'permission-denied') {
+        handleFirestoreError(error, OperationType.WRITE, path);
+      }
+      throw error;
+    }
 
     // Update local status
     await localDb.items.update(item.id, { syncStatus: 'synced', mediaUrl });
@@ -273,6 +298,7 @@ export async function fetchItemsFromCloud() {
   const user = auth.currentUser;
   if (!user || !navigator.onLine) return;
 
+  const path = `users/${user.uid}/items`;
   try {
     const itemsRef = collection(firestore, 'users', user.uid, 'items');
     const snapshot = await getDocs(itemsRef);
@@ -294,8 +320,12 @@ export async function fetchItemsFromCloud() {
         }
       }
     }
-  } catch (error) {
-    console.error('Error fetching items from cloud:', error);
+  } catch (error: any) {
+    if (error.code === 'permission-denied') {
+      handleFirestoreError(error, OperationType.GET, path);
+    } else {
+      console.error('Error fetching items from cloud:', error);
+    }
   }
 }
 

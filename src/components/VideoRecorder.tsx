@@ -1,91 +1,91 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Video, Square, Save, Trash2, X, Play, Pause, Loader2, Camera, Upload } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { useAuth } from '../AuthContext';
+import { saveCapture } from '../db';
+import { 
+  Video, 
+  Square, 
+  Play, 
+  Pause, 
+  Trash2, 
+  Save, 
+  Loader2, 
+  Sparkles, 
+  CheckCircle2,
+  AlertCircle,
+  Camera,
+  RefreshCw,
+  X
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { saveItem } from '../db';
 
-interface VideoRecorderProps {
-  folderId: string;
-  onSaved: () => void;
-  onCancel: () => void;
-}
-
-export function VideoRecorder({ folderId, onSaved, onCancel }: VideoRecorderProps) {
-  const [mode, setMode] = useState<'select' | 'record'>('select');
+const VideoRecorder: React.FC = () => {
+  const { user } = useAuth();
   const [isRecording, setIsRecording] = useState(false);
-  const [recordingTime, setRecordingTime] = useState(0);
   const [videoBlob, setVideoBlob] = useState<Blob | null>(null);
-  const [videoUrl, setVideoUrl] = useState<string | null>(null);
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
+  const [recordingTime, setRecordingTime] = useState(0);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [status, setStatus] = useState<'idle' | 'preview' | 'recording' | 'recorded' | 'saving' | 'success'>('idle');
+  const [error, setError] = useState<string | null>(null);
+  
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const previewRef = useRef<HTMLVideoElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const videoPreviewRef = useRef<HTMLVideoElement | null>(null);
-  const videoPlaybackRef = useRef<HTMLVideoElement | null>(null);
+  const timerRef = useRef<number | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
 
   useEffect(() => {
-    if (mode === 'record' && !videoBlob) {
-      startPreview();
-    }
     return () => {
-      stopPreview();
       if (timerRef.current) clearInterval(timerRef.current);
-      if (videoUrl) URL.revokeObjectURL(videoUrl);
     };
-  }, [videoBlob, facingMode, mode]);
+  }, []);
 
   const startPreview = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode }, 
-        audio: true 
-      });
-      if (videoPreviewRef.current) {
-        videoPreviewRef.current.srcObject = stream;
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
       }
+      setStatus('preview');
     } catch (err) {
-      console.error('Error accessing camera:', err);
-      alert('Erro ao acessar a câmera. Verifique as permissões.');
+      console.error("Erro ao acessar câmera/microfone:", err);
+      setError("Não foi possível acessar a câmera ou o microfone.");
     }
   };
 
   const stopPreview = () => {
-    if (videoPreviewRef.current?.srcObject) {
-      const stream = videoPreviewRef.current.srcObject as MediaStream;
+    if (videoRef.current && videoRef.current.srcObject) {
+      const stream = videoRef.current.srcObject as MediaStream;
       stream.getTracks().forEach(track => track.stop());
     }
+    setStatus('idle');
   };
 
-  const startRecording = async () => {
-    try {
-      const stream = videoPreviewRef.current?.srcObject as MediaStream;
-      if (!stream) return;
+  const startRecording = () => {
+    if (!videoRef.current || !videoRef.current.srcObject) return;
+    
+    const stream = videoRef.current.srcObject as MediaStream;
+    const mediaRecorder = new MediaRecorder(stream);
+    mediaRecorderRef.current = mediaRecorder;
+    chunksRef.current = [];
 
-      const mediaRecorder = new MediaRecorder(stream);
-      mediaRecorderRef.current = mediaRecorder;
+    mediaRecorder.ondataavailable = (e) => {
+      if (e.data.size > 0) chunksRef.current.push(e.data);
+    };
 
-      const chunks: Blob[] = [];
-      mediaRecorder.ondataavailable = (e) => chunks.push(e.data);
-      mediaRecorder.onstop = () => {
-        const blob = new Blob(chunks, { type: 'video/webm' });
-        setVideoBlob(blob);
-        setVideoUrl(URL.createObjectURL(blob));
-        stopPreview();
-      };
+    mediaRecorder.onstop = () => {
+      const blob = new Blob(chunksRef.current, { type: 'video/webm' });
+      setVideoBlob(blob);
+      setStatus('recorded');
+    };
 
-      mediaRecorder.start();
-      setIsRecording(true);
-      setRecordingTime(0);
-      timerRef.current = setInterval(() => {
-        setRecordingTime(prev => prev + 1);
-      }, 1000);
-    } catch (err) {
-      console.error('Error starting recording:', err);
-    }
+    mediaRecorder.start();
+    setIsRecording(true);
+    setStatus('recording');
+    setRecordingTime(0);
+    
+    timerRef.current = window.setInterval(() => {
+      setRecordingTime(prev => prev + 1);
+    }, 1000);
   };
 
   const stopRecording = () => {
@@ -96,219 +96,193 @@ export function VideoRecorder({ folderId, onSaved, onCancel }: VideoRecorderProp
     }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setVideoBlob(file);
-      setVideoUrl(URL.createObjectURL(file));
-      setMode('record'); // Switch to preview mode
-    }
-  };
-
-  const handleSave = async () => {
-    if (!videoBlob) return;
-    setIsSaving(true);
-    try {
-      const finalTitle = title.trim() || 'Vídeo Salvo';
-      const finalSummary = description.trim() || 'Gravação de vídeo';
-      
-      await saveItem({
-        id: Date.now().toString(),
-        type: 'video',
-        content: videoBlob,
-        timestamp: Date.now(),
-        folderId,
-        title: finalTitle,
-        summary: finalSummary,
-        metadata: {
-          title: finalTitle,
-          description: description.trim(),
-          summary: finalSummary,
-          type: 'video'
-        }
-      });
-      onSaved();
-    } catch (err) {
-      console.error('Error saving video:', err);
-      alert('Erro ao salvar o vídeo.');
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const handleSave = async () => {
+    if (!user || !videoBlob) return;
+    
+    setIsProcessing(true);
+    setStatus('saving');
+    
+    try {
+      await saveCapture(user.uid, 'video', {
+        duration: recordingTime,
+        storagePath: `video/${user.uid}/${Date.now()}.webm`
+      }, {
+        title: `Gravação de Vídeo - ${new Date().toLocaleDateString()}`,
+        description: "Captura de vídeo pessoal.",
+        tags: ['vídeo', 'holístico']
+      });
+
+      setStatus('success');
+      setTimeout(() => {
+        setStatus('idle');
+        setVideoBlob(null);
+        setRecordingTime(0);
+      }, 3000);
+    } catch (err) {
+      console.error("Erro ao salvar:", err);
+      setError("Falha ao salvar a gravação.");
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.95 }}
-      animate={{ opacity: 1, scale: 1 }}
-      className="flex-1 flex flex-col p-4 bg-slate-900 absolute inset-0 z-40"
-    >
-      <div className="flex-1 flex flex-col items-center justify-center max-w-sm mx-auto w-full">
-        <div className="w-full flex justify-between items-center mb-5">
-          <h2 className="text-xl font-bold text-white">Vídeo</h2>
-          <button onClick={onCancel} className="p-2 text-slate-400 hover:text-white">
-            <X size={22} />
-          </button>
-        </div>
+    <div className="max-w-4xl mx-auto space-y-8">
+      <div className="text-center space-y-2">
+        <h3 className="text-2xl font-bold text-zinc-100">Gravador de Vídeo</h3>
+        <p className="text-zinc-400">Capture momentos, reuniões ou reflexões em vídeo.</p>
+      </div>
 
-        {mode === 'select' && !videoBlob ? (
-          <div className="flex-1 flex flex-col items-center justify-center gap-5 w-full">
-            <input
-              type="file"
-              accept="video/*"
-              className="hidden"
-              ref={fileInputRef}
-              onChange={handleFileUpload}
-            />
-            
-            <div className="grid grid-cols-1 gap-4 w-full">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden shadow-2xl relative">
+        <AnimatePresence mode="wait">
+          {status === 'idle' && (
+            <motion.div 
+              key="idle"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="p-20 flex flex-col items-center justify-center space-y-6"
+            >
+              <div className="p-6 bg-indigo-500/10 rounded-full border border-indigo-500/20">
+                <Video className="w-12 h-12 text-indigo-400" />
+              </div>
               <button
-                onClick={() => setMode('record')}
-                className="w-full py-6 rounded-3xl bg-slate-800 border-2 border-dashed border-slate-600 hover:border-red-500 hover:bg-slate-700 transition-all flex flex-col items-center justify-center gap-3 group"
+                onClick={startPreview}
+                className="px-8 py-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-2xl transition-all shadow-lg shadow-indigo-600/20 flex items-center gap-3 active:scale-95"
               >
-                <Video size={40} className="text-slate-400 group-hover:text-red-400 transition-colors" />
-                <span className="text-slate-300 font-medium text-base">Gravar Vídeo</span>
+                <Camera className="w-5 h-5" />
+                Ativar Câmera
               </button>
+            </motion.div>
+          )}
 
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="w-full py-6 rounded-3xl bg-slate-800 border-2 border-dashed border-slate-600 hover:border-blue-500 hover:bg-slate-700 transition-all flex flex-col items-center justify-center gap-3 group"
-              >
-                <Upload size={40} className="text-slate-400 group-hover:text-blue-400 transition-colors" />
-                <span className="text-slate-300 font-medium text-base">Upload de Arquivo</span>
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className="flex-1 flex flex-col items-center justify-center w-full relative">
-            <div className="w-full aspect-[9/16] max-h-[45vh] bg-slate-950 rounded-3xl overflow-hidden shadow-2xl relative border border-slate-800">
-              {!videoBlob ? (
-                <>
-                  <video
-                    ref={videoPreviewRef}
-                    autoPlay
-                    muted
-                    playsInline
-                    className="w-full h-full object-cover"
-                  />
-                  {isRecording && (
-                    <div className="absolute top-4 left-4 flex items-center gap-2 bg-red-600 px-2.5 py-1 rounded-full text-white font-bold text-xs animate-pulse">
-                      <div className="w-1.5 h-1.5 bg-white rounded-full" />
-                      REC {formatTime(recordingTime)}
-                    </div>
-                  )}
-                  {!isRecording && (
+          {(status === 'preview' || status === 'recording') && (
+            <motion.div 
+              key="preview"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="relative aspect-video bg-black"
+            >
+              <video 
+                ref={videoRef} 
+                autoPlay 
+                muted 
+                playsInline 
+                className="w-full h-full object-cover"
+              />
+              
+              <div className="absolute top-6 left-6 flex items-center gap-3">
+                {status === 'recording' && (
+                  <div className="flex items-center gap-2 px-3 py-1.5 bg-red-600 text-white rounded-full text-xs font-bold animate-pulse">
+                    <div className="w-2 h-2 bg-white rounded-full" />
+                    REC {formatTime(recordingTime)}
+                  </div>
+                )}
+              </div>
+
+              <div className="absolute bottom-8 left-0 right-0 flex justify-center gap-4">
+                {status === 'preview' ? (
+                  <>
                     <button
-                      onClick={() => setFacingMode(prev => prev === 'user' ? 'environment' : 'user')}
-                      className="absolute top-4 right-4 p-2.5 bg-slate-900/50 backdrop-blur-md rounded-full text-white hover:bg-slate-800 transition-all"
+                      onClick={stopPreview}
+                      className="p-4 bg-zinc-900/80 text-white rounded-full hover:bg-zinc-800"
                     >
-                      <Camera size={20} />
+                      <X className="w-6 h-6" />
                     </button>
-                  )}
+                    <button
+                      onClick={startRecording}
+                      className="p-6 bg-red-600 text-white rounded-full hover:bg-red-500 shadow-xl active:scale-95 border-4 border-white/20"
+                    >
+                      <div className="w-8 h-8 rounded-full bg-white" />
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    onClick={stopRecording}
+                    className="p-6 bg-white text-zinc-950 rounded-full hover:bg-zinc-100 shadow-xl active:scale-95"
+                  >
+                    <Square className="w-8 h-8 fill-current" />
+                  </button>
+                )}
+              </div>
+            </motion.div>
+          )}
+
+          {status === 'recorded' && videoBlob && (
+            <motion.div 
+              key="recorded"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="p-6 space-y-6"
+            >
+              <div className="relative rounded-2xl overflow-hidden border border-zinc-800 bg-black aspect-video">
+                <video 
+                  src={URL.createObjectURL(videoBlob)} 
+                  controls 
+                  className="w-full h-full"
+                />
+              </div>
+              <div className="flex justify-center gap-4">
+                <button
+                  onClick={() => {
+                    setVideoBlob(null);
+                    startPreview();
+                  }}
+                  className="px-8 py-3 bg-zinc-800 text-zinc-400 font-bold rounded-xl hover:bg-zinc-700"
+                >
+                  Gravar Outro
+                </button>
+                <button
+                  onClick={handleSave}
+                  className="px-8 py-3 bg-emerald-600 text-white font-bold rounded-xl hover:bg-emerald-500 shadow-lg shadow-emerald-600/20 flex items-center gap-2"
+                >
+                  <Save className="w-5 h-5" />
+                  Salvar Vídeo
+                </button>
+              </div>
+            </motion.div>
+          )}
+
+          {(status === 'saving' || status === 'success') && (
+            <motion.div 
+              key="status"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="p-20 flex flex-col items-center justify-center space-y-6"
+            >
+              {status === 'saving' ? (
+                <>
+                  <Loader2 className="w-16 h-16 text-indigo-500 animate-spin" />
+                  <p className="text-xl font-bold text-zinc-100">Salvando Gravação...</p>
                 </>
               ) : (
-                <video
-                  ref={videoPlaybackRef}
-                  src={videoUrl!}
-                  autoPlay
-                  loop
-                  playsInline
-                  className="w-full h-full object-cover"
-                />
-              )}
-            </div>
-
-            <div className="mt-5 w-full flex flex-col items-center gap-4">
-              {!videoBlob ? (
-                <div className="flex flex-col items-center gap-4 w-full">
-                  <button
-                    onClick={isRecording ? stopRecording : startRecording}
-                    className={`w-14 h-14 rounded-full flex items-center justify-center transition-all shadow-2xl ${
-                      isRecording ? 'bg-red-600 hover:bg-red-700 scale-110' : 'bg-blue-600 hover:bg-blue-700'
-                    }`}
-                  >
-                    {isRecording ? <Square size={20} fill="white" className="text-white" /> : <Video size={24} className="text-white" />}
-                  </button>
-
-                  <button
-                    onClick={isRecording ? stopRecording : startRecording}
-                    className={`px-6 py-2.5 rounded-full font-bold text-white transition-all text-sm ${
-                      isRecording ? 'bg-red-500/20 text-red-400 border border-red-500/50' : 'bg-blue-600 hover:bg-blue-700'
-                    }`}
-                  >
-                    {isRecording ? 'Interromper Gravação' : 'Iniciar Gravação'}
-                  </button>
-                </div>
-              ) : (
-                <div className="w-full space-y-3">
-                  <div className="flex items-center justify-center gap-3">
-                    <button
-                      onClick={() => {
-                        if (videoPlaybackRef.current?.paused) videoPlaybackRef.current.play();
-                        else videoPlaybackRef.current?.pause();
-                        setIsPlaying(!isPlaying);
-                      }}
-                      className="flex-1 py-3 rounded-2xl bg-slate-800 flex items-center justify-center gap-3 text-white hover:bg-slate-700 transition-all border border-slate-700 text-sm"
-                    >
-                      {isPlaying ? <Pause size={18} /> : <Play size={18} fill="white" />}
-                      <span className="font-bold">{isPlaying ? 'Pausar' : 'Ouvir Gravação'}</span>
-                    </button>
-                    
-                    <button
-                      onClick={() => {
-                        setVideoBlob(null);
-                        setVideoUrl(null);
-                        setRecordingTime(0);
-                        setMode('select');
-                      }}
-                      className="p-3 rounded-2xl bg-slate-800 flex items-center justify-center text-red-400 hover:bg-slate-700 transition-all border border-slate-700"
-                    >
-                      <Trash2 size={18} />
-                    </button>
+                <>
+                  <div className="p-4 bg-emerald-500/10 rounded-full">
+                    <CheckCircle2 className="w-16 h-16 text-emerald-500" />
                   </div>
-
-                  <div className="flex flex-col gap-3 w-full">
-                    <div className="flex flex-col gap-1.5">
-                      <label className="text-xs font-medium text-slate-400 ml-1">Título (Opcional)</label>
-                      <input
-                        type="text"
-                        value={title}
-                        onChange={(e) => setTitle(e.target.value)}
-                        placeholder="Dê um nome para este vídeo..."
-                        className="w-full bg-slate-800 border border-slate-700 rounded-xl p-3 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-sm"
-                      />
-                    </div>
-
-                    <div className="flex flex-col gap-1.5">
-                      <label className="text-xs font-medium text-slate-400 ml-1">Descrição / Resumo</label>
-                      <textarea
-                        value={description}
-                        onChange={(e) => setDescription(e.target.value)}
-                        placeholder="O que acontece neste vídeo?"
-                        className="w-full bg-slate-800 border border-slate-700 rounded-xl p-3 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 resize-none h-20 text-sm"
-                      />
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={handleSave}
-                    disabled={isSaving}
-                    className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-bold text-base flex items-center justify-center gap-3 shadow-xl transition-all disabled:opacity-50"
-                  >
-                    {isSaving ? <Loader2 className="animate-spin" /> : <Save size={22} />}
-                    {isSaving ? 'Salvando...' : 'Salvar no ExoMind'}
-                  </button>
-                </div>
+                  <p className="text-xl font-bold text-zinc-100">Vídeo Salvo com Sucesso!</p>
+                </>
               )}
-            </div>
-          </div>
-        )}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
-    </motion.div>
+
+      {error && (
+        <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center gap-3 text-red-400 text-sm">
+          <AlertCircle className="w-5 h-5 flex-shrink-0" />
+          {error}
+        </div>
+      )}
+    </div>
   );
-}
+};
+
+export default VideoRecorder;

@@ -1,9 +1,5 @@
 {
-  "requestFramePermissions": [
-    "microphone",
-    "camera",
-    "geolocation"
-  ],
-  "name": "ExoMind",
-  "description": "Seu cérebro de apoio para o dia-a-dia."
+  "name": "Assistente Holístico",
+  "description": "Seu assistente pessoal para produtividade, organização e bem-estar, potencializado por IA.",
+  "requestFramePermissions": []
 }

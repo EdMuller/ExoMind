@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User, onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
-import { doc, getDoc, setDoc, collection, addDoc } from 'firebase/firestore';
+import { doc, getDoc, getDocs, setDoc, collection, addDoc } from 'firebase/firestore';
 import { auth, db } from './firebase';
+import { handleFirestoreError, OperationType } from './utils/firestoreErrorHandler';
 import { APP_VERSION } from './constants';
 
 interface AuthContextType {
@@ -72,6 +73,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     // Check for maintenance mode and updates
     const checkAppConfig = async () => {
+      const path = 'config/app_config';
       try {
         const configDoc = await getDoc(doc(db, 'config', 'app_config'));
         if (configDoc.exists()) {
@@ -82,9 +84,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setBetaMode(data.betaMode || false);
           setSupportWhatsapp(data.supportWhatsapp || '5511999999999');
           setDefaultCredits(data.defaultCredits || 50);
+        } else if (user && user.email === 'empresarioholistico@gmail.com') {
+          // Initialize config if it doesn't exist and user is admin
+          const defaultConfig = {
+            maintenanceMode: false,
+            forceUpdate: false,
+            currentVersion: APP_VERSION,
+            betaMode: false,
+            supportWhatsapp: '5511999999999',
+            defaultCredits: 50
+          };
+          await setDoc(doc(db, 'config', 'app_config'), defaultConfig);
+          console.log('App config initialized');
         }
-      } catch (error) {
-        console.error('Error checking app config:', error);
+      } catch (error: any) {
+        if (error.code === 'permission-denied') {
+          console.error('Error checking app config:', handleFirestoreError(error, OperationType.GET, path));
+        } else {
+          console.error('Error checking app config:', error);
+        }
       }
     };
 
@@ -119,9 +137,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           // Fetch config for default credits if user is new
           let currentDefaultCredits = defaultCredits;
           if (!userSnap.exists()) {
-            const configDoc = await getDoc(doc(db, 'config', 'app_config'));
-            if (configDoc.exists()) {
-              currentDefaultCredits = configDoc.data().defaultCredits || 50;
+            try {
+              const configDoc = await getDoc(doc(db, 'config', 'app_config'));
+              if (configDoc.exists()) {
+                currentDefaultCredits = configDoc.data().defaultCredits || 50;
+              }
+            } catch (error: any) {
+              if (error.code === 'permission-denied') {
+                handleFirestoreError(error, OperationType.GET, 'config/app_config');
+              }
             }
           }
 
@@ -140,7 +164,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               totalProfit: 0,
               subscriptionDate: Date.now()
             };
-            await setDoc(userRef, userData);
+            try {
+              await setDoc(userRef, userData);
+            } catch (error: any) {
+              if (error.code === 'permission-denied') {
+                handleFirestoreError(error, OperationType.WRITE, `users/${currentUser.uid}`);
+              }
+              throw error;
+            }
           } else {
             userData = userSnap.data();
             // Ensure the user is always VIP if they are the owner
@@ -148,7 +179,81 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               userData.isVip = true;
               userData.plan = 'Diamante';
               userData.role = 'admin';
-              await setDoc(userRef, { isVip: true, plan: 'Diamante', role: 'admin' }, { merge: true });
+              try {
+                await setDoc(userRef, { isVip: true, plan: 'Diamante', role: 'admin' }, { merge: true });
+              } catch (error: any) {
+                if (error.code === 'permission-denied') {
+                  handleFirestoreError(error, OperationType.WRITE, `users/${currentUser.uid}`);
+                }
+              }
+            }
+
+            // Initialize plans if they don't exist
+            try {
+              const plansSnap = await getDocs(collection(db, 'plans'));
+              if (plansSnap.empty && currentUser.email === 'empresarioholistico@gmail.com') {
+                const defaultPlans = [
+                  { 
+                    id: 'bronze', 
+                    name: 'Bronze', 
+                    price: 47, 
+                    conv: '60%', 
+                    delivery: '500 Créditos / 10h Voz', 
+                    profit: 18.80, 
+                    color: 'text-orange-400',
+                    depositValue: 47,
+                    conversionFactor: 0.25,
+                    benefits: ['500 Créditos', '10h de Voz IA', 'Suporte Básico'],
+                    duration: '30 dias'
+                  },
+                  { 
+                    id: 'prata', 
+                    name: 'Prata', 
+                    price: 97, 
+                    conv: '70%', 
+                    delivery: '1200 Créditos / 25h Voz', 
+                    profit: 29.10, 
+                    color: 'text-slate-300',
+                    depositValue: 97,
+                    conversionFactor: 0.25,
+                    benefits: ['1200 Créditos', '25h de Voz IA', 'Suporte Prioritário'],
+                    duration: '30 dias'
+                  },
+                  { 
+                    id: 'ouro', 
+                    name: 'Ouro', 
+                    price: 197, 
+                    conv: '80%', 
+                    delivery: '3000 Créditos / 60h Voz', 
+                    profit: 39.40, 
+                    color: 'text-yellow-400',
+                    depositValue: 197,
+                    conversionFactor: 0.25,
+                    benefits: ['3000 Créditos', '60h de Voz IA', 'Suporte 24/7'],
+                    duration: '30 dias'
+                  },
+                  { 
+                    id: 'diamante', 
+                    name: 'Diamante', 
+                    price: 497, 
+                    conv: '90%', 
+                    delivery: 'Ilimitado* / Suporte VIP / Análise IA', 
+                    profit: 99.40, 
+                    color: 'text-blue-400',
+                    depositValue: 497,
+                    conversionFactor: 0.25,
+                    benefits: ['Créditos Ilimitados*', 'Voz IA Ilimitada*', 'Suporte VIP', 'Análise IA Avançada'],
+                    duration: '30 dias'
+                  }
+                ];
+                for (const p of defaultPlans) {
+                  await setDoc(doc(db, 'plans', p.id), p);
+                }
+              }
+            } catch (error: any) {
+              if (error.code === 'permission-denied') {
+                handleFirestoreError(error, OperationType.GET, 'plans');
+              }
             }
           }
 

@@ -1,242 +1,49 @@
 {
   "entities": {
-    "User": {
-      "title": "User",
-      "description": "A user of the ExoMind application.",
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Stores user information and roles.",
       "type": "object",
       "properties": {
-        "uid": {
-          "type": "string",
-          "description": "The user's unique ID."
-        },
-        "email": {
-          "type": "string",
-          "format": "email",
-          "description": "The user's email address."
-        },
-        "displayName": {
-          "type": "string",
-          "description": "The user's display name."
-        },
-        "photoURL": {
-          "type": "string",
-          "description": "The user's profile picture URL."
-        },
-        "role": {
-          "type": "string",
-          "enum": ["admin", "user"],
-          "description": "The user's role (admin or user)."
-        },
-        "plan": {
-          "type": "string",
-          "enum": ["Bronze", "Prata", "Ouro", "Diamante"],
-          "description": "The user's subscription plan."
-        },
-        "credits": {
-          "type": "number",
-          "description": "Current available credits for IA/Voz usage."
-        },
-        "totalSpent": {
-          "type": "number",
-          "description": "Total real value spent by the user on resources."
-        },
-        "totalProfit": {
-          "type": "number",
-          "description": "Total profit generated for ExoMind by this user."
-        },
-        "subscriptionDate": {
-          "type": "number",
-          "description": "Timestamp of the first subscription."
-        },
-        "whatsapp": {
-          "type": "string",
-          "description": "User's WhatsApp number."
-        },
-        "cacaVoiceUses": {
-          "type": "number",
-          "description": "Number of times the user has used the Cacá Voice."
-        }
+        "uid": { "type": "string", "description": "Unique identifier for the user." },
+        "email": { "type": "string", "format": "email", "description": "User's email address." },
+        "displayName": { "type": "string", "description": "User's display name." },
+        "photoURL": { "type": "string", "description": "URL to user's profile picture." },
+        "role": { "type": "string", "enum": ["user", "admin"], "description": "User's role in the system." },
+        "isVip": { "type": "boolean", "description": "Whether the user has VIP status." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the profile was created." }
       },
-      "required": ["uid", "email", "role", "plan", "credits"]
+      "required": ["uid", "email", "displayName", "role", "isVip", "createdAt"]
     },
-    "Coupon": {
-      "title": "Coupon",
-      "description": "A bonus coupon for subscriptions.",
+    "CaptureItem": {
+      "title": "Capture Item",
+      "description": "Stores captured data like notes, documents, audio, etc.",
       "type": "object",
       "properties": {
-        "code": {
-          "type": "string",
-          "description": "The coupon code (e.g., EXOMIND20)."
+        "userId": { "type": "string", "description": "ID of the user who owns this item." },
+        "type": { "type": "string", "enum": ["note", "document", "location", "audio", "video", "schedule"], "description": "Type of captured content." },
+        "content": { "type": "object", "description": "The actual content of the capture." },
+        "metadata": {
+          "type": "object",
+          "properties": {
+            "title": { "type": "string" },
+            "description": { "type": "string" },
+            "tags": { "type": "array", "items": { "type": "string" } }
+          }
         },
-        "benefit": {
-          "type": "string",
-          "description": "Description of the benefit."
-        },
-        "type": {
-          "type": "string",
-          "enum": ["credits", "plan_upgrade", "time_extension"],
-          "description": "The type of benefit."
-        },
-        "value": {
-          "type": "number",
-          "description": "The value of the benefit (e.g., 20 for 20% or 10 for R$10)."
-        },
-        "expiresAt": {
-          "type": "number",
-          "description": "Expiration timestamp."
-        },
-        "active": {
-          "type": "boolean",
-          "description": "Whether the coupon is active."
-        }
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the item was captured." }
       },
-      "required": ["code", "type", "value", "active"]
-    },
-    "Item": {
-      "title": "Item",
-      "description": "A memory item (text, audio, or video) saved by the user.",
-      "type": "object",
-      "properties": {
-        "id": {
-          "type": "string",
-          "description": "The item's unique ID."
-        },
-        "type": {
-          "type": "string",
-          "enum": ["text", "audio", "video", "photo", "location", "schedule"],
-          "description": "The type of the item."
-        },
-        "content": {
-          "type": "string",
-          "description": "The content of the item (text or base64 data)."
-        },
-        "summary": {
-          "type": "string",
-          "description": "A summary generated by the AI."
-        },
-        "folderId": {
-          "type": "string",
-          "description": "The ID of the folder this item belongs to."
-        },
-        "timestamp": {
-          "type": "number",
-          "description": "Unix timestamp in milliseconds."
-        },
-        "mediaUrl": {
-          "type": "string",
-          "description": "URL to the media file in Storage."
-        },
-        "createdAt": {
-          "type": "timestamp",
-          "description": "When the item was created."
-        }
-      },
-      "required": ["id", "type", "content", "createdAt", "folderId", "timestamp"]
-    },
-    "Folder": {
-      "title": "Folder",
-      "description": "A folder to organize memory items.",
-      "type": "object",
-      "properties": {
-        "id": {
-          "type": "string",
-          "description": "The folder's unique ID."
-        },
-        "name": {
-          "type": "string",
-          "description": "The name of the folder."
-        },
-        "parentId": {
-          "type": "string",
-          "description": "The ID of the parent folder (for subfolders)."
-        },
-        "userId": {
-          "type": "string",
-          "description": "The ID of the user who owns the folder."
-        },
-        "timestamp": {
-          "type": "number",
-          "description": "Unix timestamp in milliseconds."
-        },
-        "createdAt": {
-          "type": "timestamp",
-          "description": "When the folder was created."
-        }
-      },
-      "required": ["id", "name", "userId", "timestamp", "createdAt"]
-    },
-    "Message": {
-      "title": "Message",
-      "description": "A message sent between users.",
-      "type": "object",
-      "properties": {
-        "id": { "type": "string" },
-        "senderId": { "type": "string" },
-        "receiverId": { "type": "string" },
-        "content": { "type": "string" },
-        "type": { "type": "string", "enum": ["text", "photo", "audio", "video"] },
-        "mediaUrl": { "type": "string" },
-        "timestamp": { "type": "number" },
-        "scheduledAt": { "type": "number" },
-        "status": { "type": "string", "enum": ["pending", "sent", "read"] }
-      },
-      "required": ["id", "senderId", "receiverId", "content", "timestamp", "status"]
-    },
-    "Config": {
-      "title": "Config",
-      "description": "Global application configuration.",
-      "type": "object",
-      "properties": {
-        "currentVersion": { "type": "string", "description": "The latest stable version of the app." },
-        "forceUpdate": { "type": "boolean", "description": "Whether to force users to update." },
-        "maintenanceMode": { "type": "boolean", "description": "Whether the app is in maintenance mode." },
-        "betaMode": { "type": "boolean", "description": "Whether the app is in beta testing mode for admins." }
-      }
-    },
-    "Plan": {
-      "title": "Plan",
-      "description": "A subscription plan configuration.",
-      "type": "object",
-      "properties": {
-        "id": { "type": "string" },
-        "name": { "type": "string" },
-        "price": { "type": "number" },
-        "conv": { "type": "string" },
-        "delivery": { "type": "string" },
-        "profit": { "type": "number" },
-        "color": { "type": "string" }
-      },
-      "required": ["id", "name", "price", "conv", "delivery", "profit", "color"]
+      "required": ["userId", "type", "content", "metadata", "createdAt"]
     }
   },
   "firestore": {
     "/users/{userId}": {
-      "schema": { "$ref": "#/entities/User" },
-      "description": "User profiles and settings."
+      "schema": "UserProfile",
+      "description": "User profile documents."
     },
-    "/users/{userId}/items/{itemId}": {
-      "schema": { "$ref": "#/entities/Item" },
-      "description": "Memory items belonging to a user."
-    },
-    "/users/{userId}/folders/{folderId}": {
-      "schema": { "$ref": "#/entities/Folder" },
-      "description": "Folders belonging to a user."
-    },
-    "/messages/{messageId}": {
-      "schema": { "$ref": "#/entities/Message" },
-      "description": "Messages sent between users."
-    },
-    "/coupons/{couponId}": {
-      "schema": { "$ref": "#/entities/Coupon" },
-      "description": "Bonus coupons for subscriptions."
-    },
-    "/config/{configId}": {
-      "schema": { "$ref": "#/entities/Config" },
-      "description": "Global app configuration."
-    },
-    "/plans/{planId}": {
-      "schema": { "$ref": "#/entities/Plan" },
-      "description": "Subscription plan configurations."
+    "/captures/{captureId}": {
+      "schema": "CaptureItem",
+      "description": "Captured items collection."
     }
   }
 }

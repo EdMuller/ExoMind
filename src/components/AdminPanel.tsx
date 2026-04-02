@@ -38,6 +38,10 @@ interface PlanData {
   delivery: string;
   profit: number;
   color: string;
+  depositValue: number;
+  conversionFactor: number;
+  benefits: string[];
+  duration: string;
 }
 
 interface ConfigData {
@@ -47,6 +51,7 @@ interface ConfigData {
   betaMode: boolean;
   supportWhatsapp?: string;
   defaultCredits?: number;
+  defaultConversionFactor?: number;
 }
 
 interface TransactionData {
@@ -87,6 +92,14 @@ export const AdminPanel: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     fetchData();
   }, []);
 
+  // Clear editing states when tab changes to prevent UI leakage
+  useEffect(() => {
+    setEditingPlan(null);
+    setEditingUser(null);
+    setEditingRowId(null);
+    setShowAddCoupon(false);
+  }, [activeTab]);
+
   const fetchData = async () => {
     setLoading(true);
     try {
@@ -108,7 +121,8 @@ export const AdminPanel: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           maintenanceMode: false, 
           betaMode: false,
           supportWhatsapp: '5511999999999',
-          defaultCredits: 50
+          defaultCredits: 50,
+          defaultConversionFactor: 0.25
         };
         await setDoc(doc(db, 'config', 'app_config'), initialConfig);
         setConfig(initialConfig as ConfigData);
@@ -117,10 +131,58 @@ export const AdminPanel: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       const plansSnap = await getDocs(collection(db, 'plans'));
       if (plansSnap.empty) {
         const defaultPlans: PlanData[] = [
-          { id: 'bronze', name: 'Bronze', price: 47, conv: '60%', delivery: '500 Créditos / 10h Voz', profit: 18.80, color: 'text-orange-400' },
-          { id: 'prata', name: 'Prata', price: 97, conv: '70%', delivery: '1200 Créditos / 25h Voz', profit: 29.10, color: 'text-slate-300' },
-          { id: 'ouro', name: 'Ouro', price: 197, conv: '80%', delivery: '3000 Créditos / 60h Voz', profit: 39.40, color: 'text-yellow-400' },
-          { id: 'diamante', name: 'Diamante', price: 497, conv: '90%', delivery: 'Ilimitado* / Suporte VIP / Análise IA', profit: 99.40, color: 'text-blue-400' }
+          { 
+            id: 'bronze', 
+            name: 'Bronze', 
+            price: 10, 
+            conv: '25%', 
+            delivery: 'R$ 2.50 em benefícios', 
+            profit: 7.50, 
+            color: 'text-orange-400',
+            depositValue: 10,
+            conversionFactor: 0.25,
+            benefits: ['Benefícios Proporcionais'],
+            duration: '30 dias'
+          },
+          { 
+            id: 'prata', 
+            name: 'Prata', 
+            price: 10, 
+            conv: '25%', 
+            delivery: 'R$ 2.50 em benefícios', 
+            profit: 7.50, 
+            color: 'text-slate-300',
+            depositValue: 10,
+            conversionFactor: 0.25,
+            benefits: ['Benefícios Proporcionais'],
+            duration: '30 dias'
+          },
+          { 
+            id: 'ouro', 
+            name: 'Ouro', 
+            price: 10, 
+            conv: '25%', 
+            delivery: 'R$ 2.50 em benefícios', 
+            profit: 7.50, 
+            color: 'text-yellow-400',
+            depositValue: 10,
+            conversionFactor: 0.25,
+            benefits: ['Benefícios Proporcionais'],
+            duration: '30 dias'
+          },
+          { 
+            id: 'diamante', 
+            name: 'Diamante', 
+            price: 497, 
+            conv: '25%', 
+            delivery: 'R$ 124.25 em benefícios', 
+            profit: 372.75, 
+            color: 'text-blue-400',
+            depositValue: 497,
+            conversionFactor: 0.25,
+            benefits: ['Créditos Ilimitados*', 'Voz IA Ilimitada*', 'Suporte VIP', 'Análise IA Avançada'],
+            duration: '30 dias'
+          }
         ];
         for (const p of defaultPlans) {
           await setDoc(doc(db, 'plans', p.id), p);
@@ -206,23 +268,48 @@ export const AdminPanel: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     }
   };
 
+  const calculateDeliveryText = (price: number, factor: number) => {
+    const deliveryValue = price * factor;
+    if (deliveryValue >= 100) return "Ilimitado* / Suporte VIP / Análise IA";
+    
+    // If it's a free tier (price is 0), use the factor as a percentage of defaultCredits
+    if (price === 0) {
+      const baseCredits = config?.defaultCredits || 50;
+      const freeCredits = Math.floor(baseCredits * factor);
+      const freeHours = (freeCredits / 50).toFixed(1);
+      return `${freeCredits} Créditos / ${freeHours}h Voz IA (Grátis)`;
+    }
+
+    const credits = Math.floor(deliveryValue * 50);
+    const hours = Math.floor(deliveryValue * 1);
+    return `${credits} Créditos / ${hours}h Voz IA`;
+  };
+
   const handleUpdatePlan = async (id: string, updates: Partial<PlanData>) => {
     try {
-      let newProfit = updates.profit;
       const plan = plans.find(p => p.id === id);
-      if (plan) {
-        const price = updates.price !== undefined ? updates.price : plan.price;
-        const convStr = updates.conv !== undefined ? updates.conv : plan.conv;
-        const convPercent = parseInt(convStr) / 100;
-        newProfit = price * (1 - convPercent);
-      }
+      if (!plan) return;
 
-      const finalUpdates = { ...updates };
-      if (newProfit !== undefined) finalUpdates.profit = newProfit;
+      const price = updates.price !== undefined ? updates.price : plan.price;
+      const factor = updates.conversionFactor !== undefined ? updates.conversionFactor : plan.conversionFactor;
+      
+      // Automatic calculations based strictly on user input
+      const deliveryValue = price * factor;
+      const newProfit = price - deliveryValue;
+      const deliveryText = calculateDeliveryText(price, factor);
+      const convText = `${(factor * 100).toFixed(0)}%`;
+
+      const finalUpdates = { 
+        ...updates,
+        price,
+        conversionFactor: factor,
+        profit: newProfit,
+        delivery: deliveryText,
+        conv: convText
+      };
 
       await updateDoc(doc(db, 'plans', id), finalUpdates);
       setEditingPlan(null);
-      setEditingRowId(null);
       fetchData();
     } catch (error) {
       console.error("Error updating plan:", error);
@@ -253,6 +340,12 @@ export const AdminPanel: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             Usuários
           </button>
           <button 
+            onClick={() => setActiveTab('plans')}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${activeTab === 'plans' ? 'bg-purple-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
+          >
+            Planos
+          </button>
+          <button 
             onClick={() => setActiveTab('coupons')}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${activeTab === 'coupons' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
           >
@@ -265,16 +358,10 @@ export const AdminPanel: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             Métricas
           </button>
           <button 
-            onClick={() => setActiveTab('plans')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${activeTab === 'plans' ? 'bg-purple-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
-          >
-            Planos & Lucro
-          </button>
-          <button 
             onClick={() => setActiveTab('version')}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${activeTab === 'version' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
           >
-            Versão
+            Configurações
           </button>
         </div>
       </div>
@@ -377,7 +464,7 @@ export const AdminPanel: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 className="space-y-4"
               >
                 <div className="flex justify-between items-center">
-                  <h3 className="text-lg font-semibold text-white">Gerenciar Bônus</h3>
+                  <h3 className="text-lg font-semibold text-white">Gerenciar Cupons</h3>
                   <button 
                     onClick={() => setShowAddCoupon(true)}
                     className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-xl text-sm font-bold transition-all active:scale-95"
@@ -400,7 +487,7 @@ export const AdminPanel: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                           type="text" 
                           value={newCoupon.code}
                           onChange={(e) => setNewCoupon({...newCoupon, code: e.target.value})}
-                          placeholder="EX: BÔNUS20"
+                          placeholder="EX: CUPOM20"
                           className="w-full bg-slate-800 border border-slate-700 rounded-xl p-3 text-white outline-none focus:ring-2 focus:ring-blue-500"
                         />
                       </div>
@@ -431,7 +518,7 @@ export const AdminPanel: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                           type="text" 
                           value={newCoupon.benefit}
                           onChange={(e) => setNewCoupon({...newCoupon, benefit: e.target.value})}
-                          placeholder="Ex: 20% de bônus"
+                          placeholder="Ex: 20% de desconto"
                           className="w-full bg-slate-800 border border-slate-700 rounded-xl p-3 text-white outline-none focus:ring-2 focus:ring-blue-500"
                         />
                       </div>
@@ -518,7 +605,7 @@ export const AdminPanel: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                         <tr className="border-b border-slate-700">
                           <th className="pb-4 font-bold text-slate-400 text-xs uppercase tracking-wider">Plano</th>
                           <th className="pb-4 font-bold text-slate-400 text-xs uppercase tracking-wider">Valor (R$)</th>
-                          <th className="pb-4 font-bold text-slate-400 text-xs uppercase tracking-wider">Conversão Cliente</th>
+                          <th className="pb-4 font-bold text-slate-400 text-xs uppercase tracking-wider">Fator Conversão</th>
                           <th className="pb-4 font-bold text-slate-400 text-xs uppercase tracking-wider">Entrega (Mensal)</th>
                           <th className="pb-4 font-bold text-slate-400 text-xs uppercase tracking-wider">Lucro Est.</th>
                           <th className="pb-4 font-bold text-slate-400 text-xs uppercase tracking-wider">Ativos</th>
@@ -537,83 +624,38 @@ export const AdminPanel: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                           <tr key={p.id} className="hover:bg-slate-800/30 transition-colors">
                             <td className={`py-4 font-bold ${p.color}`}>{p.name}</td>
                             <td className="py-4">
-                              {editingRowId === p.id ? (
-                                <input 
-                                  type="number"
-                                  value={editValues.price ?? p.price}
-                                  onChange={(e) => setEditValues({ ...editValues, price: parseFloat(e.target.value) })}
-                                  className="w-24 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-white text-sm"
-                                />
-                              ) : (
-                                <span className="text-white font-mono">R$ {p.price.toFixed(2)}</span>
-                              )}
+                              <span className="text-white font-mono">R$ {p.price.toFixed(2)}</span>
                             </td>
                             <td className="py-4">
-                              {editingRowId === p.id ? (
-                                <input 
-                                  type="text"
-                                  value={editValues.conv ?? p.conv}
-                                  onChange={(e) => setEditValues({ ...editValues, conv: e.target.value })}
-                                  className="w-20 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-white text-sm"
-                                />
-                              ) : (
-                                <div className="flex items-center gap-2 text-slate-300 text-sm">
-                                  <div className="w-12 h-1.5 bg-slate-700 rounded-full overflow-hidden">
-                                    <div className="h-full bg-emerald-500" style={{ width: p.conv }}></div>
-                                  </div>
-                                  {p.conv}
+                              <div className="flex items-center gap-2 text-slate-300 text-sm">
+                                <div className="w-12 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                                  <div className="h-full bg-emerald-500" style={{ width: `${p.conversionFactor * 100}%` }}></div>
                                 </div>
-                              )}
+                                {(p.conversionFactor * 100).toFixed(0)}%
+                              </div>
                             </td>
                             <td className="py-4">
-                              {editingRowId === p.id ? (
-                                <input 
-                                  type="text"
-                                  value={editValues.delivery ?? p.delivery}
-                                  onChange={(e) => setEditValues({ ...editValues, delivery: e.target.value })}
-                                  className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-white text-sm"
-                                />
-                              ) : (
-                                <span className="text-slate-400 text-xs italic">{p.delivery}</span>
-                              )}
+                              <span className="text-slate-400 text-xs italic">
+                                {calculateDeliveryText(p.price, p.conversionFactor)}
+                              </span>
                             </td>
-                            <td className="py-4 text-emerald-400 font-bold">R$ {p.profit.toFixed(2)}</td>
+                            <td className="py-4 text-emerald-400 font-bold">
+                              R$ {(p.price * (1 - p.conversionFactor)).toFixed(2)}
+                            </td>
                             <td className="py-4">
                               <span className="bg-slate-700 text-white px-3 py-1 rounded-full text-xs font-bold">
                                 {users.filter(u => u.plan === p.name).length}
                               </span>
                             </td>
                             <td className="py-4 text-right">
-                              {editingRowId === p.id ? (
-                                <div className="flex justify-end gap-2">
-                                  <button 
-                                    onClick={() => handleUpdatePlan(p.id, editValues)}
-                                    className="p-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors"
-                                    title="Salvar"
-                                  >
-                                    <Check size={14} />
-                                  </button>
-                                  <button 
-                                    onClick={() => setEditingRowId(null)}
-                                    className="p-1.5 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors"
-                                    title="Cancelar"
-                                  >
-                                    <X size={14} />
-                                  </button>
-                                </div>
-                              ) : (
-                                <button 
-                                  onClick={() => {
-                                    setEditingRowId(p.id);
-                                    setEditValues(p);
-                                  }}
-                                  className="inline-flex items-center gap-2 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-slate-300 hover:text-white transition-all text-xs font-bold"
-                                  title="Editar Plano"
-                                >
-                                  <Edit size={14} className="text-purple-400" />
-                                  Editar
-                                </button>
-                              )}
+                              <button 
+                                onClick={() => setEditingPlan(p)}
+                                className="inline-flex items-center gap-2 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-slate-300 hover:text-white transition-all text-xs font-bold"
+                                title="Editar Plano"
+                              >
+                                <Edit size={14} className="text-purple-400" />
+                                Editar
+                              </button>
                             </td>
                           </tr>
                         ))}
@@ -828,34 +870,70 @@ export const AdminPanel: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                     </h3>
                     
                     <div className="space-y-4">
-                      <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Valor (R$)</label>
-                        <input 
-                          type="number"
-                          value={editingPlan.price}
-                          onChange={(e) => setEditingPlan({ ...editingPlan, price: parseFloat(e.target.value) })}
-                          className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-blue-500"
-                        />
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Valor (R$)</label>
+                          <input 
+                            type="number"
+                            value={editingPlan.price}
+                            onChange={(e) => setEditingPlan({ ...editingPlan, price: parseFloat(e.target.value) })}
+                            className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-blue-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Fator de Conversão (%)</label>
+                          <input 
+                            type="number"
+                            step="1"
+                            value={editingPlan.conversionFactor * 100}
+                            onChange={(e) => setEditingPlan({ ...editingPlan, conversionFactor: parseFloat(e.target.value) / 100 })}
+                            className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-blue-500"
+                          />
+                        </div>
                       </div>
                       
-                      <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Conversão Cliente (%)</label>
-                        <input 
-                          type="text"
-                          value={editingPlan.conv}
-                          onChange={(e) => setEditingPlan({ ...editingPlan, conv: e.target.value })}
-                          placeholder="Ex: 70%"
-                          className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-blue-500"
-                        />
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Entrega Estimada</label>
+                          <div className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-emerald-400 font-bold">
+                            {calculateDeliveryText(editingPlan.price, editingPlan.conversionFactor)}
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Lucro Estimado</label>
+                          <div className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-blue-400 font-bold">
+                            R$ {(editingPlan.price * (1 - editingPlan.conversionFactor)).toFixed(2)}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Duração</label>
+                          <input 
+                            type="text"
+                            value={editingPlan.duration}
+                            onChange={(e) => setEditingPlan({ ...editingPlan, duration: e.target.value })}
+                            className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-blue-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Cor (Tailwind Class)</label>
+                          <input 
+                            type="text"
+                            value={editingPlan.color}
+                            onChange={(e) => setEditingPlan({ ...editingPlan, color: e.target.value })}
+                            className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-blue-500"
+                          />
+                        </div>
                       </div>
 
                       <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Entrega (Texto)</label>
-                        <input 
-                          type="text"
-                          value={editingPlan.delivery}
-                          onChange={(e) => setEditingPlan({ ...editingPlan, delivery: e.target.value })}
-                          className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-blue-500"
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Benefícios (um por linha)</label>
+                        <textarea 
+                          value={editingPlan.benefits.join('\n')}
+                          onChange={(e) => setEditingPlan({ ...editingPlan, benefits: e.target.value.split('\n') })}
+                          className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-blue-500 h-24"
                         />
                       </div>
                     </div>
@@ -998,6 +1076,20 @@ export const AdminPanel: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                         onChange={(e) => handleUpdateConfig({ supportWhatsapp: e.target.value })}
                         placeholder="5511999999999"
                         className="w-48 bg-slate-800 border border-slate-700 rounded-lg p-2 text-white font-mono text-sm"
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between pt-4 border-t border-slate-800">
+                      <div>
+                        <div className="text-sm font-bold text-white uppercase tracking-wider">Fator de Conversão Padrão (%)</div>
+                        <div className="text-xs text-slate-500">Fator global para conversão de valores em tempo de IA</div>
+                      </div>
+                      <input 
+                        type="number" 
+                        step="0.01"
+                        value={(config?.defaultConversionFactor || 0.25) * 100}
+                        onChange={(e) => handleUpdateConfig({ defaultConversionFactor: parseFloat(e.target.value) / 100 })}
+                        className="w-24 bg-slate-800 border border-slate-700 rounded-lg p-2 text-center text-white font-mono font-bold"
                       />
                     </div>
 
