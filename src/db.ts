@@ -105,7 +105,8 @@ export async function getFolders(): Promise<ExoFolder[]> {
       await localDb.folders.bulkPut(firestoreFolders);
     }
     
-    return firestoreFolders;
+    // Deduplicate by ID
+    return Array.from(new Map(firestoreFolders.map(f => [f.id, f])).values());
   } catch (error: any) {
     if (error.code === 'permission-denied') {
       handleFirestoreError(error, OperationType.GET, path);
@@ -293,7 +294,8 @@ export async function getItems(folderId?: string): Promise<ExoItem[]> {
   if (folderId && folderId !== 'all') {
     items = items.filter(item => item.folderId === folderId);
   }
-  return items;
+  // Deduplicate by ID
+  return Array.from(new Map(items.map(item => [item.id, item])).values());
 }
 
 export async function fetchItemsFromCloud() {

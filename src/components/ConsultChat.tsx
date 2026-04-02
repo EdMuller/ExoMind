@@ -91,7 +91,7 @@ export function ConsultChat({ inputMode, folderId, onCancel }: ConsultChatProps)
   }, [messages, isLoading]);
 
   const processModelResponse = (text: string) => {
-    const regex = /<IMG:\s*(\d+)\s*>/g;
+    const regex = /<IMG:\s*([a-f0-9-]+)\s*>/g;
     let match;
     const images: string[] = [];
     let cleanText = text;
@@ -103,7 +103,7 @@ export function ConsultChat({ inputMode, folderId, onCancel }: ConsultChatProps)
         images.push(item.content);
       }
     }
-    cleanText = text.replace(/<IMG:\s*(\d+)\s*>/g, '').trim();
+    cleanText = text.replace(/<IMG:\s*([a-f0-9-]+)\s*>/g, '').trim();
 
     return { text: cleanText, images: images.length > 0 ? images : undefined };
   };

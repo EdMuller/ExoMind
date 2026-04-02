@@ -104,7 +104,7 @@ export const AdminPanel: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     setLoading(true);
     try {
       const usersSnap = await getDocs(collection(db, 'users'));
-      const usersList = usersSnap.docs.map(doc => doc.data() as UserData);
+      const usersList = usersSnap.docs.map(doc => ({ uid: doc.id, ...doc.data() } as UserData));
       setUsers(usersList);
 
       const couponsSnap = await getDocs(collection(db, 'coupons'));
